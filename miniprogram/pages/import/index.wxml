@@ -1,0 +1,24 @@
+<view class="page">
+  <view class="tip-card">
+    <text class="tip-title">支持导入随手记导出的 xlsx 文件</text>
+    <text class="tip-desc">文件需包含「支出」和「收入」两个 Sheet，系统会自动映射分类、账户等字段。</text>
+  </view>
+
+  <button class="btn-outline" bindtap="chooseFile">选择文件</button>
+
+  <view class="file-info" wx:if="{{fileName}}">
+    <text class="file-name">📄 {{fileName}}</text>
+  </view>
+
+  <view class="preview-section" wx:if="{{previewData.length > 0}}">
+    <view class="preview-title">预览（共 {{previewData.length}} 条）</view>
+    <view class="preview-item" wx:for="{{previewData}}" wx:key="index">
+      <text class="preview-type">{{item.type}}</text>
+      <text class="preview-date">{{item.date}}</text>
+      <text class="preview-category">{{item.category1}} / {{item.category2}}</text>
+      <text class="preview-amount">¥{{item.amount}}</text>
+    </view>
+  </view>
+
+  <button class="save-btn" wx:if="{{previewData.length > 0}}" bindtap="confirmImport" loading="{{importing}}">确认导入</button>
+</view>

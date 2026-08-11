@@ -1,0 +1,101 @@
+.page {
+  padding: 24rpx;
+}
+
+.tip-card {
+  background: #e8f8ee;
+  padding: 32rpx;
+  border-radius: 16rpx;
+  margin-bottom: 24rpx;
+}
+
+.tip-title {
+  display: block;
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #07C160;
+  margin-bottom: 12rpx;
+}
+
+.tip-desc {
+  font-size: 26rpx;
+  color: #666;
+  line-height: 1.6;
+}
+
+.btn-outline {
+  background: #fff;
+  color: #07C160;
+  font-size: 30rpx;
+  border: 2rpx solid #07C160;
+  border-radius: 44rpx;
+  height: 80rpx;
+  line-height: 76rpx;
+}
+
+.btn-outline::after {
+  border: none;
+}
+
+.file-info {
+  margin: 24rpx 0;
+}
+
+.file-name {
+  font-size: 28rpx;
+  color: #333;
+}
+
+.preview-section {
+  margin: 24rpx 0;
+}
+
+.preview-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 16rpx;
+}
+
+.preview-item {
+  display: flex;
+  align-items: center;
+  background: #fff;
+  padding: 20rpx 24rpx;
+  border-radius: 8rpx;
+  margin-bottom: 4rpx;
+  font-size: 24rpx;
+  color: #666;
+}
+
+.preview-type {
+  width: 80rpx;
+  color: #e54545;
+}
+
+.preview-date {
+  flex: 1;
+}
+
+.preview-category {
+  flex: 1;
+}
+
+.preview-amount {
+  font-weight: 600;
+  color: #333;
+}
+
+.save-btn {
+  background: #07C160;
+  color: #fff;
+  font-size: 34rpx;
+  border-radius: 44rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+  margin-top: 24rpx;
+}
+
+.save-btn::after {
+  border: none;
+}

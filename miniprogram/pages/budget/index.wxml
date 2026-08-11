@@ -1,0 +1,23 @@
+<view class="page">
+  <view class="budget-card">
+    <text class="budget-label">本月预算</text>
+    <view class="budget-input-row">
+      <text class="budget-symbol">¥</text>
+      <input class="budget-input" type="digit" placeholder="0.00" value="{{monthBudget}}" bindinput="onBudgetInput" />
+    </view>
+  </view>
+
+  <view class="status-card">
+    <view class="status-row">
+      <text class="status-label">已支出</text>
+      <text class="status-value expense">¥{{monthExpense}}</text>
+    </view>
+    <view class="progress-bar">
+      <view class="progress-fill {{percent > 100 ? 'over' : ''}}" style="width: {{percent > 100 ? 100 : percent}}%"></view>
+    </view>
+    <view class="status-tip" wx:if="{{percent > 100}}">⚠️ 本月支出已超出预算 {{percent - 100}}%</view>
+    <view class="status-tip" wx:else>已使用 {{percent}}%</view>
+  </view>
+
+  <button class="save-btn" bindtap="saveBudget">保存</button>
+</view>

@@ -1,0 +1,91 @@
+<view class="page">
+  <!-- 收支切换 -->
+  <view class="type-tabs">
+    <view class="type-tab {{type === 'expense' ? 'active expense' : ''}}" data-type="expense" bindtap="switchType">支出</view>
+    <view class="type-tab {{type === 'income' ? 'active income' : ''}}" data-type="income" bindtap="switchType">收入</view>
+  </view>
+
+  <!-- 金额输入 -->
+  <view class="amount-row">
+    <text class="amount-symbol">¥</text>
+    <input class="amount-input" type="digit" placeholder="0.00" value="{{amount}}" bindinput="onAmountInput" focus="{{true}}" />
+  </view>
+
+  <!-- 分类选择 -->
+  <view class="form-row" bindtap="selectCategory">
+    <text class="form-label">分类</text>
+    <view class="form-value">
+      <text wx:if="{{category2}}">{{category1Icon}} {{category1}} › {{category2Icon}} {{category2}}</text>
+      <text class="placeholder" wx:else>请选择分类</text>
+    </view>
+    <text class="form-arrow">›</text>
+  </view>
+
+  <!-- 账户 -->
+  <view class="form-row" bindtap="selectAccount">
+    <text class="form-label">账户</text>
+    <view class="form-value">
+      <text wx:if="{{account}}">{{account}}</text>
+      <text class="placeholder" wx:else>请选择账户</text>
+    </view>
+    <text class="form-arrow">›</text>
+  </view>
+
+  <!-- 成员 -->
+  <view class="form-row {{isAdmin ? '' : 'readonly'}}" bindtap="selectMember">
+    <text class="form-label">成员</text>
+    <view class="form-value">
+      <text wx:if="{{member}}">{{memberName}}</text>
+      <text class="placeholder" wx:else>请选择成员</text>
+    </view>
+    <text class="form-arrow" wx:if="{{isAdmin}}">›</text>
+  </view>
+
+  <!-- 日期 -->
+  <view class="form-row">
+    <text class="form-label">日期</text>
+    <picker mode="date" value="{{date}}" bindchange="onDateChange">
+      <view class="form-value"><text>{{date.substring(0, 10)}}</text></view>
+    </picker>
+    <text class="form-arrow">›</text>
+  </view>
+
+  <!-- 商家 -->
+  <view class="form-row">
+    <text class="form-label">商家</text>
+    <input class="form-input" maxlength="50" placeholder="添加商家" value="{{merchant}}" bindinput="onMerchantInput" />
+  </view>
+
+  <!-- 备注 -->
+  <view class="form-row">
+    <text class="form-label">备注</text>
+    <input class="form-input" maxlength="200" placeholder="添加备注" value="{{remark}}" bindinput="onRemarkInput" />
+  </view>
+
+  <!-- 保存按钮 -->
+  <button class="save-btn" loading="{{saving}}" disabled="{{saving}}" bindtap="saveBill">保存</button>
+
+  <!-- 分类选择器弹窗 -->
+  <view class="category-picker" wx:if="{{showCategoryPicker}}" catchtap="closeCategoryPicker">
+    <view class="picker-content" catchtap="stopPropagation">
+      <view class="picker-header">
+        <text class="picker-title">选择分类</text>
+        <text class="picker-close" bindtap="closeCategoryPicker">✕</text>
+      </view>
+      <scroll-view class="picker-body" scroll-y>
+        <view class="category-group" wx:for="{{categories}}" wx:key="id">
+          <view class="category1-item" bindtap="selectCategory1" data-category="{{item}}">
+            <text class="category1-icon">{{item.icon}}</text>
+            <text class="category1-name">{{item.name}}</text>
+          </view>
+          <view class="category2-list" wx:if="{{item.children && item.children.length > 0}}">
+            <view class="category2-item" wx:for="{{item.children}}" wx:for-item="child" wx:key="id" bindtap="selectCategory2" data-child="{{child}}">
+              <text class="category2-icon">{{child.icon}}</text>
+              <text class="category2-name">{{child.name}}</text>
+            </view>
+          </view>
+        </view>
+      </scroll-view>
+    </view>
+  </view>
+</view>

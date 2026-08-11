@@ -1,0 +1,33 @@
+<view class="page">
+  <view class="section-title">我的家庭</view>
+  <view class="family-list">
+    <view class="family-card" wx:for="{{families}}" wx:key="id" data-id="{{item.id}}" bindtap="switchFamily">
+      <view class="family-info">
+        <text class="family-name">{{item.name}}</text>
+        <text class="family-members">{{item.memberCount}} 位成员</text>
+      </view>
+      <text class="family-current" wx:if="{{item.id === currentFamilyId}}">当前</text>
+    </view>
+  </view>
+
+  <button class="btn-outline" bindtap="createFamily">+ 创建新家庭</button>
+  <button class="btn-outline" bindtap="joinByInvite">输入邀请码加入</button>
+  <button class="btn-outline" bindtap="resetFamilyData" wx:if="{{isAdmin}}">重置分类和账户</button>
+
+  <view class="section-title">家庭成员</view>
+  <view class="member-list">
+    <view class="member-item" wx:for="{{members}}" wx:key="openid">
+      <image class="member-avatar" src="{{item.avatarUrl || '/images/icons/avatar.png'}}"></image>
+      <view class="member-info">
+        <text class="member-name">{{item.nickName}}</text>
+        <text class="member-role">{{item.role === 'admin' ? '管理员' : '成员'}}</text>
+      </view>
+      <view class="member-actions" wx:if="{{item.role !== 'admin' && isAdmin}}">
+        <text class="member-transfer" data-openid="{{item.openid}}" bindtap="transferAdmin">移交</text>
+        <text class="member-remove" data-openid="{{item.openid}}" bindtap="removeMember">移除</text>
+      </view>
+    </view>
+  </view>
+
+  <button class="btn-outline" bindtap="showInvite" wx:if="{{isAdmin}}">邀请成员加入</button>
+</view>

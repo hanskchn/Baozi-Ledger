@@ -1,0 +1,48 @@
+<view class="page">
+  <!-- 月份选择 -->
+  <view class="month-bar">
+    <view class="month-arrow">‹</view>
+    <view class="month-text">{{currentMonth}}</view>
+    <view class="month-arrow">›</view>
+  </view>
+
+  <!-- 收支汇总 -->
+  <view class="summary-card">
+    <view class="summary-item">
+      <text class="summary-label">支出</text>
+      <text class="summary-value expense">¥{{monthExpense}}</text>
+    </view>
+    <view class="summary-item">
+      <text class="summary-label">收入</text>
+      <text class="summary-value income">¥{{monthIncome}}</text>
+    </view>
+    <view class="summary-item">
+      <text class="summary-label">结余</text>
+      <text class="summary-value">¥{{monthBalance}}</text>
+    </view>
+  </view>
+
+  <!-- 图表切换 -->
+  <view class="chart-tabs">
+    <view class="chart-tab {{chartType === 'expense' ? 'active' : ''}}" data-type="expense" bindtap="switchChartType">支出</view>
+    <view class="chart-tab {{chartType === 'income' ? 'active' : ''}}" data-type="income" bindtap="switchChartType">收入</view>
+  </view>
+
+  <!-- 饼图占位 -->
+  <view class="chart-card">
+    <view class="chart-title">分类占比</view>
+    <view class="chart-placeholder">
+      <text>📊 饼图区域</text>
+      <text class="chart-hint">（ec-canvas 饼图）</text>
+    </view>
+  </view>
+
+  <!-- 折线图占位 -->
+  <view class="chart-card">
+    <view class="chart-title">每日趋势</view>
+    <view class="chart-placeholder">
+      <text>📈 折线图区域</text>
+      <text class="chart-hint">（ec-canvas 折线图）</text>
+    </view>
+  </view>
+</view>

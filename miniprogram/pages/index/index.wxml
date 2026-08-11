@@ -1,0 +1,59 @@
+<view class="page">
+  <view class="state-panel" wx:if="{{loading}}">正在准备你的家庭账本…</view>
+  <view class="state-panel error" wx:elif="{{errorMessage}}">
+    <text>{{errorMessage}}</text>
+    <button class="retry-btn" bindtap="retryInitialize">重新尝试</button>
+  </view>
+  <block wx:else>
+  <!-- 顶部账本切换 -->
+  <view class="family-bar">
+    <view class="family-name">{{familyName}}</view>
+    <view class="family-switch" bindtap="goFamily">切换 ▾</view>
+  </view>
+
+  <!-- 概览卡片 -->
+  <view class="overview-card">
+    <view class="overview-item">
+      <text class="overview-label">今日支出</text>
+      <text class="overview-value expense">¥{{todayExpense}}</text>
+    </view>
+    <view class="overview-divider"></view>
+    <view class="overview-item">
+      <text class="overview-label">本月支出</text>
+      <text class="overview-value expense">¥{{monthExpense}}</text>
+    </view>
+    <view class="overview-divider"></view>
+    <view class="overview-item">
+      <text class="overview-label">本月收入</text>
+      <text class="overview-value income">¥{{monthIncome}}</text>
+    </view>
+    <view class="overview-divider"></view>
+    <view class="overview-item">
+      <text class="overview-label">本月结余</text>
+      <text class="overview-value">¥{{monthBalance}}</text>
+    </view>
+  </view>
+
+  <!-- 记一笔按钮 -->
+  <view class="quick-actions">
+    <button class="add-bill-btn expense-btn" data-type="expense" bindtap="goAddBill">记支出</button>
+    <button class="add-bill-btn income-btn" data-type="income" bindtap="goAddBill">记收入</button>
+  </view>
+
+  <!-- 最近账单 -->
+  <view class="section">
+    <view class="section-title">最近账单</view>
+    <view class="bill-list">
+      <view class="empty-tip" wx:if="{{recentBills.length === 0}}">暂无账单，快去记一笔吧～</view>
+      <view class="bill-item" wx:for="{{recentBills}}" wx:key="_id">
+        <view class="bill-icon">{{item.category2Icon || '📝'}}</view>
+        <view class="bill-info">
+          <text class="bill-category">{{item.category2}}</text>
+          <text class="bill-remark">{{item.remark || item.member}}</text>
+        </view>
+        <text class="bill-amount {{item.type}}">{{item.type === 'expense' ? '-' : '+'}}¥{{item.displayAmount}}</text>
+      </view>
+    </view>
+  </view>
+  </block>
+</view>

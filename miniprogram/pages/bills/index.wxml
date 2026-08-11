@@ -1,0 +1,41 @@
+<view class="page">
+  <!-- 月份选择 -->
+  <view class="month-bar">
+    <view class="month-arrow" data-delta="-1" bindtap="changeMonth">‹</view>
+    <text class="month-text">{{filterMonth}}</text>
+    <view class="month-arrow" data-delta="1" bindtap="changeMonth">›</view>
+  </view>
+
+  <!-- 筛选栏 -->
+  <view class="filter-bar">
+    <view class="filter-item {{filterCategory ? 'active' : ''}}" data-key="filterCategory" data-value="{{filterCategory}}" bindtap="changeFilter">
+      <text wx:if="{{filterCategory}}">{{filterCategory}}</text>
+      <text wx:else>分类 ▾</text>
+    </view>
+    <view class="filter-item {{filterMember ? 'active' : ''}}" data-key="filterMember" data-value="{{filterMember}}" bindtap="changeFilter">
+      <text wx:if="{{filterMember}}">{{filterMember}}</text>
+      <text wx:else>成员 ▾</text>
+    </view>
+    <view class="filter-item {{filterAccount ? 'active' : ''}}" data-key="filterAccount" data-value="{{filterAccount}}" bindtap="changeFilter">
+      <text wx:if="{{filterAccount}}">{{filterAccount}}</text>
+      <text wx:else>账户 ▾</text>
+    </view>
+    <view class="filter-search" bindtap="goSearch">🔍</view>
+  </view>
+
+  <!-- 账单列表 -->
+  <view class="bill-list">
+    <view class="empty-tip" wx:if="{{bills.length === 0}}">暂无账单记录</view>
+    <view class="bill-group" wx:for="{{bills}}" wx:key="_id">
+      <view class="bill-date">{{item.date.substring(0, 10)}}</view>
+      <view class="bill-item" data-id="{{item._id}}" bindtap="onItemTap">
+        <view class="bill-icon">{{item.category2Icon || '📝'}}</view>
+        <view class="bill-info">
+          <text class="bill-category">{{item.category2}}</text>
+          <text class="bill-remark">{{item.remark || item.member}}</text>
+        </view>
+        <text class="bill-amount {{item.type}}">{{item.type === 'expense' ? '-' : '+'}}¥{{item.displayAmount}}</text>
+      </view>
+    </view>
+  </view>
+</view>

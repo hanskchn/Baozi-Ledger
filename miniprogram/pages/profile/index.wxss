@@ -1,0 +1,72 @@
+.page {
+  padding: 0 0 40rpx;
+}
+
+.user-card {
+  display: flex;
+  align-items: center;
+  background: #fff;
+  padding: 40rpx 32rpx;
+  margin-bottom: 16rpx;
+}
+
+.user-avatar {
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 50%;
+  margin-right: 24rpx;
+  background: #f0f0f0;
+}
+
+.user-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.user-name {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #333;
+}
+
+.user-family {
+  font-size: 26rpx;
+  color: #999;
+  margin-top: 8rpx;
+}
+
+.menu-group {
+  background: #fff;
+  margin: 0 24rpx 16rpx;
+  border-radius: 16rpx;
+  overflow: hidden;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  padding: 28rpx 32rpx;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.menu-item:last-child {
+  border-bottom: none;
+}
+
+.menu-icon {
+  font-size: 36rpx;
+  margin-right: 20rpx;
+  width: 48rpx;
+  text-align: center;
+}
+
+.menu-text {
+  flex: 1;
+  font-size: 30rpx;
+  color: #333;
+}
+
+.menu-arrow {
+  font-size: 36rpx;
+  color: #ccc;
+}

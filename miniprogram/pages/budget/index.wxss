@@ -1,0 +1,99 @@
+.page {
+  padding: 24rpx;
+}
+
+.budget-card {
+  background: #fff;
+  padding: 40rpx 32rpx;
+  border-radius: 16rpx;
+  margin-bottom: 16rpx;
+}
+
+.budget-label {
+  font-size: 28rpx;
+  color: #999;
+}
+
+.budget-input-row {
+  display: flex;
+  align-items: center;
+  margin-top: 16rpx;
+}
+
+.budget-symbol {
+  font-size: 48rpx;
+  font-weight: 600;
+  color: #333;
+  margin-right: 16rpx;
+}
+
+.budget-input {
+  flex: 1;
+  font-size: 56rpx;
+  font-weight: 600;
+  color: #333;
+}
+
+.status-card {
+  background: #fff;
+  padding: 32rpx;
+  border-radius: 16rpx;
+  margin-bottom: 32rpx;
+}
+
+.status-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 20rpx;
+}
+
+.status-label {
+  font-size: 28rpx;
+  color: #666;
+}
+
+.status-value {
+  font-size: 32rpx;
+  font-weight: 600;
+}
+
+.status-value.expense {
+  color: #e54545;
+}
+
+.progress-bar {
+  height: 16rpx;
+  background: #f0f0f0;
+  border-radius: 8rpx;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: #07C160;
+  border-radius: 8rpx;
+  transition: width 0.3s;
+}
+
+.progress-fill.over {
+  background: #e54545;
+}
+
+.status-tip {
+  font-size: 26rpx;
+  color: #999;
+  margin-top: 16rpx;
+}
+
+.save-btn {
+  background: #07C160;
+  color: #fff;
+  font-size: 34rpx;
+  border-radius: 44rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+}
+
+.save-btn::after {
+  border: none;
+}

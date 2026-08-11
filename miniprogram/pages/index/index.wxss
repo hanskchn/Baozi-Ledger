@@ -1,0 +1,174 @@
+.page {
+  padding: 0 0 40rpx;
+}
+
+.family-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 32rpx;
+  background: #fff;
+}
+
+.family-name {
+  font-size: 36rpx;
+  font-weight: 600;
+  color: #333;
+}
+
+.family-switch {
+  font-size: 26rpx;
+  color: #07C160;
+}
+
+.overview-card {
+  display: flex;
+  background: #fff;
+  margin: 16rpx 24rpx;
+  padding: 32rpx 0;
+  border-radius: 16rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.06);
+}
+
+.overview-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.overview-label {
+  font-size: 22rpx;
+  color: #999;
+  margin-bottom: 12rpx;
+}
+
+.overview-value {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #333;
+}
+
+.overview-value.expense {
+  color: #e54545;
+}
+
+.overview-value.income {
+  color: #07C160;
+}
+
+.overview-divider {
+  width: 1rpx;
+  height: 56rpx;
+  background: #eee;
+}
+
+.quick-actions {
+  display: flex;
+  gap: 16rpx;
+  margin: 24rpx;
+}
+
+.add-bill-btn {
+  flex: 1;
+  margin: 0;
+  height: 88rpx;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 32rpx;
+  border-radius: 44rpx;
+}
+
+.expense-btn { background: #df4b43; }
+.income-btn { background: #16885f; }
+
+.state-panel {
+  padding: 160rpx 40rpx;
+  text-align: center;
+  color: #666;
+}
+
+.state-panel.error { color: #b73636; }
+
+.retry-btn {
+  width: 240rpx;
+  margin-top: 32rpx;
+  background: #16885f;
+  color: #fff;
+}
+
+.add-bill-btn::after {
+  border: none;
+}
+
+.section {
+  margin: 0 24rpx;
+}
+
+.section-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 16rpx;
+}
+
+.empty-tip {
+  text-align: center;
+  color: #bbb;
+  font-size: 28rpx;
+  padding: 80rpx 0;
+}
+
+.bill-item {
+  display: flex;
+  align-items: center;
+  background: #fff;
+  padding: 24rpx;
+  border-radius: 12rpx;
+  margin-bottom: 12rpx;
+}
+
+.bill-icon {
+  width: 72rpx;
+  height: 72rpx;
+  line-height: 72rpx;
+  text-align: center;
+  font-size: 40rpx;
+  background: #f5f5f5;
+  border-radius: 50%;
+  margin-right: 20rpx;
+}
+
+.bill-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.bill-category {
+  font-size: 28rpx;
+  color: #333;
+  font-weight: 500;
+}
+
+.bill-remark {
+  font-size: 24rpx;
+  color: #999;
+  margin-top: 6rpx;
+}
+
+.bill-amount {
+  font-size: 32rpx;
+  font-weight: 600;
+}
+
+.bill-amount.expense {
+  color: #333;
+}
+
+.bill-amount.income {
+  color: #07C160;
+}

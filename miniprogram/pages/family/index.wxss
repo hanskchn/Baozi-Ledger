@@ -1,0 +1,110 @@
+.page {
+  padding: 0 24rpx 40rpx;
+}
+
+.section-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #333;
+  margin: 32rpx 0 16rpx;
+}
+
+.family-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fff;
+  padding: 28rpx 32rpx;
+  border-radius: 12rpx;
+  margin-bottom: 12rpx;
+}
+
+.family-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.family-name {
+  font-size: 32rpx;
+  font-weight: 500;
+  color: #333;
+}
+
+.family-members {
+  font-size: 24rpx;
+  color: #999;
+  margin-top: 8rpx;
+}
+
+.family-current {
+  font-size: 24rpx;
+  color: #07C160;
+  background: #e8f8ee;
+  padding: 6rpx 20rpx;
+  border-radius: 20rpx;
+}
+
+.btn-outline {
+  margin-top: 16rpx;
+  background: #fff;
+  color: #07C160;
+  font-size: 30rpx;
+  border: 2rpx solid #07C160;
+  border-radius: 44rpx;
+  height: 80rpx;
+  line-height: 76rpx;
+}
+
+.member-actions {
+  display: flex;
+  gap: 24rpx;
+}
+
+.member-transfer {
+  font-size: 26rpx;
+  color: #07C160;
+}
+
+.btn-outline::after {
+  border: none;
+}
+
+.member-item {
+  display: flex;
+  align-items: center;
+  background: #fff;
+  padding: 24rpx 32rpx;
+  border-radius: 12rpx;
+  margin-bottom: 2rpx;
+}
+
+.member-avatar {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  margin-right: 20rpx;
+  background: #f0f0f0;
+}
+
+.member-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.member-name {
+  font-size: 30rpx;
+  color: #333;
+  font-weight: 500;
+}
+
+.member-role {
+  font-size: 24rpx;
+  color: #999;
+  margin-top: 6rpx;
+}
+
+.member-remove {
+  font-size: 26rpx;
+  color: #e54545;
+}
