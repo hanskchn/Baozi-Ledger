@@ -3,27 +3,30 @@
     "pages/index/index",
     "pages/stats/index",
     "pages/bills/index",
+    "pages/billDetail/index",
     "pages/profile/index",
+    "pages/filter/index",
     "pages/addBill/index",
     "pages/family/index",
     "pages/category/index",
     "pages/budget/index",
     "pages/account/index",
     "pages/import/index",
+    "pages/logs/index",
     "pages/search/index"
   ],
   "window": {
-    "backgroundColor": "#F6F6F6",
+    "backgroundColor": "#FFF8EC",
     "backgroundTextStyle": "light",
-    "navigationBarBackgroundColor": "#F6F6F6",
+    "navigationBarBackgroundColor": "#FFF8EC",
     "navigationBarTitleText": "家庭记账本",
     "navigationBarTextStyle": "black"
   },
   "tabBar": {
-    "color": "#999999",
-    "selectedColor": "#07C160",
+    "color": "#BCAAA4",
+    "selectedColor": "#FF8C42",
     "backgroundColor": "#ffffff",
-    "borderStyle": "black",
+    "borderStyle": "white",
     "list": [
       {
         "pagePath": "pages/index/index",

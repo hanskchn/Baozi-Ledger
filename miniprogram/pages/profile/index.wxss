@@ -4,34 +4,54 @@
 
 .user-card {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  background: #fff;
-  padding: 40rpx 32rpx;
+  background: #FFF;
+  padding: 48rpx 32rpx 40rpx;
   margin-bottom: 16rpx;
 }
 
 .user-avatar {
-  width: 96rpx;
-  height: 96rpx;
+  width: 140rpx;
+  height: 140rpx;
   border-radius: 50%;
-  margin-right: 24rpx;
   background: #f0f0f0;
+}
+
+.user-avatar-button {
+  width: 140rpx;
+  height: 140rpx;
+  margin: 0 0 20rpx 0;
+  padding: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  background: transparent;
+  line-height: 0;
+}
+
+.user-avatar-button::after {
+  border: 0;
+}
+
+.user-avatar-button .user-avatar {
+  margin-right: 0;
 }
 
 .user-info {
   display: flex;
   flex-direction: column;
+  align-items: center;
 }
 
 .user-name {
   font-size: 34rpx;
   font-weight: 600;
-  color: #333;
+  color: #5D4037;
 }
 
 .user-family {
   font-size: 26rpx;
-  color: #999;
+  color: #8D6E63;
   margin-top: 8rpx;
 }
 
@@ -63,10 +83,42 @@
 .menu-text {
   flex: 1;
   font-size: 30rpx;
-  color: #333;
+  color: #5D4037;
 }
 
 .menu-arrow {
   font-size: 36rpx;
   color: #ccc;
+}
+
+.account-danger {
+  margin: 40rpx 24rpx 0;
+  padding: 26rpx 0;
+  border-top: 1rpx solid #F0DDD4;
+  color: #C85A4B;
+  font-size: 28rpx;
+  text-align: center;
+}
+
+.user-family-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 8rpx;
+}
+.user-family-role {
+  margin-left: 12rpx;
+  padding: 2rpx 12rpx;
+  font-size: 20rpx;
+  border-radius: 16rpx;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.user-family-role.owner {
+  background: #FFF3E6;
+  color: #D96A23;
+}
+.user-family-role.member {
+  background: #E8F5E9;
+  color: #4CAF50;
 }

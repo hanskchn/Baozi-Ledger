@@ -1,4 +1,5 @@
 <view class="page">
+  <view class="month-bar"><text data-delta="-1" bindtap="switchMonth">‹</text><text class="month-text">{{month}}</text><text data-delta="1" bindtap="switchMonth">›</text></view>
   <view class="budget-card">
     <text class="budget-label">本月预算</text>
     <view class="budget-input-row">
@@ -15,9 +16,12 @@
     <view class="progress-bar">
       <view class="progress-fill {{percent > 100 ? 'over' : ''}}" style="width: {{percent > 100 ? 100 : percent}}%"></view>
     </view>
-    <view class="status-tip" wx:if="{{percent > 100}}">⚠️ 本月支出已超出预算 {{percent - 100}}%</view>
-    <view class="status-tip" wx:else>已使用 {{percent}}%</view>
+    <view class="status-tip over" wx:if="{{percent >= 100}}">本月支出已超出预算 {{percent - 100}}%</view>
+    <view class="status-tip warning" wx:elif="{{percent >= 80}}">本月预算已使用 {{percent}}%，请留意支出</view>
+    <view class="status-tip" wx:elif="{{hasBudget}}">已使用 {{percent}}%</view>
+    <view class="status-tip" wx:else>尚未设置本月预算</view>
   </view>
 
   <button class="save-btn" bindtap="saveBudget">保存</button>
+  <button class="delete-btn" wx:if="{{hasBudget}}" bindtap="deleteBudget">删除本月预算</button>
 </view>

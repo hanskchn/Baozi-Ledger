@@ -1,10 +1,13 @@
 <view class="page">
   <!-- 用户信息 -->
-  <view class="user-card">
-    <image class="user-avatar" src="{{avatarUrl || '/images/icons/avatar.png'}}"></image>
+  <view class="user-card" bindtap="editProfile">
+    <button class="user-avatar-button" open-type="chooseAvatar" bindchooseavatar="onChooseAvatar" catchtap="noop"><image class="user-avatar" src="{{avatarUrl || '/images/icons/avatar.png'}}"></image></button>
     <view class="user-info">
       <text class="user-name">{{nickName}}</text>
-      <text class="user-family">📦 {{familyName}}</text>
+      <view class="user-family-row">
+        <text class="user-family">📦 {{familyName}}</text>
+        <text class="user-family-role {{isOwner ? 'owner' : 'member'}}">{{isOwner ? '我的' : (familyAdminName ? familyAdminName + '的' : '成员')}}</text>
+      </view>
     </view>
   </view>
 
@@ -15,17 +18,17 @@
       <text class="menu-text">家庭管理</text>
       <text class="menu-arrow">›</text>
     </view>
-    <view class="menu-item" bindtap="goBudget">
+    <view class="menu-item" bindtap="goBudget" wx:if="{{isAdmin}}">
       <text class="menu-icon">💰</text>
       <text class="menu-text">预算设置</text>
       <text class="menu-arrow">›</text>
     </view>
-    <view class="menu-item" bindtap="goCategory">
+    <view class="menu-item" bindtap="goCategory" wx:if="{{isAdmin}}">
       <text class="menu-icon">📋</text>
       <text class="menu-text">分类管理</text>
       <text class="menu-arrow">›</text>
     </view>
-    <view class="menu-item" bindtap="goAccount">
+    <view class="menu-item" bindtap="goAccount" wx:if="{{isAdmin}}">
       <text class="menu-icon">🏦</text>
       <text class="menu-text">账户管理</text>
       <text class="menu-arrow">›</text>
@@ -33,28 +36,19 @@
   </view>
 
   <view class="menu-group">
-    <view class="menu-item" bindtap="goImport">
+    <view class="menu-item" bindtap="goImport" wx:if="{{isAdmin}}">
       <text class="menu-icon">📥</text>
       <text class="menu-text">数据导入</text>
       <text class="menu-arrow">›</text>
     </view>
-    <view class="menu-item" bindtap="goExport">
+    <view class="menu-item" bindtap="goExport" wx:if="{{isAdmin}}">
       <text class="menu-icon">📤</text>
       <text class="menu-text">数据导出</text>
       <text class="menu-arrow">›</text>
     </view>
+    <view class="menu-item" bindtap="goLogs" wx:if="{{isAdmin}}"><text class="menu-icon">🧾</text><text class="menu-text">操作记录</text><text class="menu-arrow">›</text></view>
   </view>
 
-  <view class="menu-group">
-    <view class="menu-item">
-      <text class="menu-icon">🔔</text>
-      <text class="menu-text">记账提醒</text>
-      <text class="menu-arrow">›</text>
-    </view>
-    <view class="menu-item">
-      <text class="menu-icon">ℹ️</text>
-      <text class="menu-text">关于</text>
-      <text class="menu-arrow">›</text>
-    </view>
-  </view>
+  <view class="account-danger" bindtap="cancelAccount">注销账号</view>
+
 </view>

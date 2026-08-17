@@ -1,4 +1,5 @@
 const cloud = require("wx-server-sdk");
+const crypto = require("crypto");
 
 const EXPENSE_CATEGORIES = [
   { name: "食品酒水", icon: "🍜", children: [
@@ -93,6 +94,10 @@ cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 
 const db = cloud.database();
 const command = db.command;
+let collectionsReadyPromise;
+const MAX_FAMILY_MEMBERS = 50;
+const FAMILY_MEMBER_QUERY_LIMIT = 100;
+const DEFAULT_SEED_VERSION = 1;
 const COLLECTIONS = [
   "users",
   "families",
@@ -101,10 +106,36 @@ const COLLECTIONS = [
   "categories",
   "accounts",
   "bills",
-  "budgets"
+  "budgets",
+  "bill_preferences",
+  "operation_logs",
+  "initialization_locks"
 ];
 
 const getOpenid = () => cloud.getWXContext().OPENID;
+const normalizeName = (value) => String(value || "").trim().toLocaleLowerCase();
+const getStableDocumentId = (...parts) => crypto.createHash("sha256").update(parts.map((item) => String(item || "")).join("\u0000")).digest("hex").slice(0, 24);
+const getStableUserId = (openid) => getStableDocumentId("user", openid);
+const getStableMembershipId = (familyId, openid) => getStableDocumentId("member", familyId, openid);
+
+// 计算默认账本名称：已有同名账本时依次使用“我的家庭账本 2、3…”
+const computeDefaultFamilyName = (usedNames) => {
+  const set = new Set(Array.from(usedNames || []).map((item) => String(item).trim().toLowerCase()).filter(Boolean));
+  let name = "我的家庭账本";
+  let suffix = 2;
+  while (set.has(name.toLowerCase())) name = `我的家庭账本 ${suffix++}`;
+  return name;
+};
+
+// 生成不含易混淆字符的 8 位邀请码（字符集不含 0/1/I/O）
+const INVITE_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const generateInviteCode = () => {
+  let code = "";
+  for (let index = 0; index < 8; index += 1) {
+    code += INVITE_CODE_ALPHABET[Math.floor(Math.random() * INVITE_CODE_ALPHABET.length)];
+  }
+  return code;
+};
 
 const fail = (message, errorCode = "BAD_REQUEST") => ({
   success: false,
@@ -112,24 +143,50 @@ const fail = (message, errorCode = "BAD_REQUEST") => ({
   message
 });
 
+const writeOperationLog = async (familyId, action, targetId, summary = {}) => {
+  try { await db.collection("operation_logs").add({ data: { familyId, action, targetId, operatorOpenId: getOpenid(), summary, createdAt: new Date() } }); }
+  catch (error) { console.warn("写入操作记录失败", error); }
+};
+
+const addOperationLogInTransaction = (transaction, familyId, action, targetId, summary = {}) => transaction.collection("operation_logs").add({
+  data: { familyId, action, targetId, operatorOpenId: getOpenid(), summary, createdAt: new Date() }
+});
+
 const ensureCollections = async () => {
-  await Promise.all(COLLECTIONS.map(async (name) => {
-    try {
-      await db.createCollection(name);
-    } catch (error) {
-      console.warn(`集合 ${name} 可能已存在`, error);
-    }
-  }));
+  if (!collectionsReadyPromise) {
+    collectionsReadyPromise = Promise.all(COLLECTIONS.map(async (name) => {
+      try {
+        await db.createCollection(name);
+      } catch (error) {
+        console.warn(`集合 ${name} 可能已存在`, error);
+      }
+    }));
+  }
+  return collectionsReadyPromise;
+};
+
+const getUsersByOpenid = async (openid) => {
+  const result = await db.collection("users").where({ openid }).limit(20).get();
+  return result.data;
 };
 
 const getUser = async (openid) => {
-  const result = await db.collection("users").where({ openid }).limit(1).get();
-  return result.data[0] || null;
+  const stableId = getStableUserId(openid);
+  try {
+    const result = await db.collection("users").doc(stableId).get();
+    if (result.data?.openid === openid) return result.data;
+  } catch (error) {
+    // 遗留用户记录可能使用随机文档 ID，继续按 openid 查询。
+  }
+  const users = await getUsersByOpenid(openid);
+  return users[0] || null;
 };
 
 const ensureUser = async (profile = {}) => {
   const openid = getOpenid();
-  const existing = await getUser(openid);
+  const userId = getStableUserId(openid);
+  const existingRecords = await getUsersByOpenid(openid);
+  const existing = existingRecords.find((item) => item._id === userId) || existingRecords[0] || null;
   const now = new Date();
   const userData = {
     openid,
@@ -137,21 +194,126 @@ const ensureUser = async (profile = {}) => {
     avatarUrl: String(profile.avatarUrl || existing?.avatarUrl || ""),
     updatedAt: now
   };
-  if (existing) {
-    await db.collection("users").doc(existing._id).update({ data: userData });
-    return { ...existing, ...userData };
+  const createdAt = existing?.createdAt || now;
+  // 所有并发登录最终写入同一确定性文档；遗留随机 ID 记录只在新文档落库后清理。
+  await db.collection("users").doc(userId).set({ data: { ...userData, createdAt } });
+  const duplicates = existingRecords.filter((item) => item._id !== userId);
+  await Promise.all(duplicates.map(async (item) => {
+    try {
+      await db.collection("users").doc(item._id).remove();
+    } catch (error) {
+      console.warn("清理重复用户记录失败", error);
+    }
+  }));
+  return { _id: userId, ...userData, createdAt };
+};
+
+const toClientUser = (user) => {
+  if (!user) return null;
+  return { nickName: user.nickName || "微信用户", avatarUrl: user.avatarUrl || "" };
+};
+
+const toClientMember = (member) => ({
+  memberId: member._id,
+  nickName: member.nickName || "微信用户",
+  avatarUrl: member.avatarUrl || "",
+  role: member.role,
+  joinedAt: member.joinedAt
+});
+
+const getFamilyMembers = async (familyId, status) => {
+  const where = { familyId };
+  if (status) where.status = status;
+  const result = await db.collection("family_members").where(where).limit(FAMILY_MEMBER_QUERY_LIMIT).get();
+  const byOpenid = new Map();
+  result.data.forEach((member) => {
+    const current = byOpenid.get(member.openid);
+    if (!current || compareMembership(member, current) < 0) byOpenid.set(member.openid, member);
+  });
+  return Array.from(byOpenid.values());
+};
+
+const rankMembership = (member) => {
+  const roleRank = member.role === "admin" ? 0 : 1;
+  const statusRank = member.status === "active" ? 0 : 1;
+  const stableRank = member._id === getStableMembershipId(member.familyId, member.openid) ? 0 : 1;
+  const joinedAt = new Date(member.joinedAt || 0).getTime();
+  return [statusRank, roleRank, stableRank, -joinedAt, String(member._id || "")];
+};
+
+const compareMembership = (left, right) => {
+  const a = rankMembership(left);
+  const b = rankMembership(right);
+  for (let index = 0; index < a.length; index += 1) {
+    if (a[index] < b[index]) return -1;
+    if (a[index] > b[index]) return 1;
   }
-  const result = await db.collection("users").add({ data: { ...userData, createdAt: now } });
-  return { _id: result._id, ...userData, createdAt: now };
+  return 0;
+};
+
+const getMembershipsByOpenid = async (openid) => {
+  const memberships = [];
+  let offset = 0;
+  while (true) {
+    const result = await db.collection("family_members").where({ openid }).skip(offset).limit(FAMILY_MEMBER_QUERY_LIMIT).get();
+    memberships.push(...result.data);
+    if (result.data.length < FAMILY_MEMBER_QUERY_LIMIT) return memberships;
+    offset += result.data.length;
+  }
+};
+
+const getFamilyMemberById = async (familyId, memberId) => {
+  if (!familyId || !memberId) return null;
+  try {
+    const result = await db.collection("family_members").doc(memberId).get();
+    return result.data?.familyId === familyId ? result.data : null;
+  } catch (error) {
+    return null;
+  }
+};
+
+const initializationLockId = (openid) => getStableUserId(openid);
+const claimDefaultFamilyInitialization = async (openid, forceNewFamily = false) => {
+  const lockId = initializationLockId(openid);
+  const now = Date.now();
+  return db.runTransaction(async (transaction) => {
+    const lockRef = transaction.collection("initialization_locks").doc(lockId);
+    let lock = null;
+    try {
+      lock = (await lockRef.get()).data;
+    } catch (error) {
+      // 首次初始化时锁文档不存在，继续声明锁。
+    }
+    if (!forceNewFamily && lock && lock.state === "complete" && lock.familyId) return { state: "complete", familyId: lock.familyId };
+    if (lock && lock.state === "running" && now - new Date(lock.startedAt || 0).getTime() < 60000) throw new Error("初始化正在进行，请稍后重试");
+    const attempt = forceNewFamily ? Number(lock?.attempt || 0) + 1 : Math.max(1, Number(lock?.attempt || 1));
+    const familyId = !forceNewFamily && lock?.familyId
+      ? lock.familyId
+      : getStableDocumentId("default-family", openid, attempt);
+    await lockRef.set({ data: { openid, familyId, attempt, state: "running", startedAt: new Date(now), updatedAt: new Date(now) } });
+    return { state: "claimed", lockId, familyId };
+  });
+};
+
+const finishDefaultFamilyInitialization = async (openid, familyId, state = "complete") => {
+  const now = new Date();
+  const lockRef = db.collection("initialization_locks").doc(initializationLockId(openid));
+  try {
+    await lockRef.update({ data: { familyId, state, updatedAt: now, ...(state === "complete" ? { completedAt: now } : {}) } });
+  } catch (error) {
+    await lockRef.set({ data: { openid, familyId, attempt: 1, state, updatedAt: now, ...(state === "complete" ? { completedAt: now } : {}) } });
+  }
 };
 
 const getActiveMember = async (familyId, openid) => {
+  const family = await getFamilyOrNull(familyId);
+  if (!family || family.status === "dissolved") return null;
   const result = await db.collection("family_members").where({
     familyId,
     openid,
     status: "active"
-  }).limit(1).get();
-  return result.data[0] || null;
+  }).limit(FAMILY_MEMBER_QUERY_LIMIT).get();
+  return result.data.sort(compareMembership)[0] || null;
 };
 
 const requireAdmin = async (familyId, openid = getOpenid()) => {
@@ -178,15 +340,21 @@ const getFamilyOrNull = async (familyId) => {
 };
 
 const getValidMemberships = async (openid) => {
-  const result = await db.collection("family_members").where({ openid, status: "active" }).get();
+  const records = await getMembershipsByOpenid(openid);
+  const result = { data: records.filter((item) => item.status === "active") };
   const valid = [];
-  for (const member of result.data) {
+  const canonicalByFamily = new Map();
+  result.data.forEach((member) => {
+    const current = canonicalByFamily.get(member.familyId);
+    if (!current || compareMembership(member, current) < 0) canonicalByFamily.set(member.familyId, member);
+  });
+  for (const member of canonicalByFamily.values()) {
     const family = await getFamilyOrNull(member.familyId);
-    if (family) {
+    if (family && family.status !== "dissolved") {
       valid.push({ member, family });
     } else {
       await db.collection("family_members").doc(member._id).update({
-        data: { status: "invalid", updatedAt: new Date() }
+        data: { status: family?.status === "dissolved" ? "dissolved" : "invalid", updatedAt: new Date() }
       });
     }
   }
@@ -196,40 +364,112 @@ const getValidMemberships = async (openid) => {
 const createInviteCode = async () => {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    let code = "";
-    for (let index = 0; index < 8; index += 1) {
-      code += alphabet[Math.floor(Math.random() * alphabet.length)];
-    }
+    const code = generateInviteCode();
     const existing = await db.collection("family_invites").where({ code, status: "active" }).limit(1).get();
     if (!existing.data.length) return code;
   }
   throw new Error("邀请码生成失败，请重试");
 };
 
+const ensureInitialFamilyInvite = async (familyId, creatorOpenid) => {
+  const family = await getFamily(familyId);
+  if (family.initialInviteInitialized) return;
+  const existing = await db.collection("family_invites").where({ familyId }).limit(1).get();
+  if (!existing.data.length) {
+    const now = new Date();
+    const code = await createInviteCode();
+    const inviteId = getStableDocumentId("initial-invite", familyId);
+    await db.collection("family_invites").doc(inviteId).set({
+      data: { familyId, code, status: "active", createdBy: creatorOpenid, createdAt: now, expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000) }
+    });
+  }
+  await db.collection("families").doc(familyId).update({ data: { initialInviteInitialized: true, updatedAt: new Date() } });
+};
+
 const initUser = async (event) => {
   const user = await ensureUser(event.profile);
+  const pendingInviteCode = String(event.inviteCode || "").trim().toUpperCase();
+  if (pendingInviteCode) {
+    try {
+      const invite = await getValidInvite(pendingInviteCode);
+      const family = await getFamily(invite.familyId);
+      const members = await getFamilyMembers(invite.familyId, "active");
+      const admin = members.find((item) => item.role === "admin");
+      const existing = members.find((item) => item.openid === user.openid);
+      if (!existing && members.length >= MAX_FAMILY_MEMBERS) throw new Error("该账本成员已达上限");
+      return {
+        success: true,
+        user: toClientUser(user),
+        family: null,
+        pendingInvite: {
+          code: pendingInviteCode,
+          familyName: family.name,
+          adminName: admin?.nickName || "管理员",
+          memberCount: members.length,
+          alreadyMember: Boolean(existing)
+        }
+      };
+    } catch (error) {
+      console.warn("启动邀请码无效，等待客户端处理下一条邀请", error.message);
+      return {
+        success: true,
+        user: toClientUser(user),
+        family: null,
+        invalidInvite: {
+          code: pendingInviteCode,
+          message: error.message || "邀请码无效或已过期"
+        }
+      };
+    }
+  }
   const memberships = await getValidMemberships(user.openid);
   let family;
   if (memberships.length) {
     const preferred = memberships.find((item) => item.member.familyId === event.currentFamilyId) || memberships[0];
     await ensureFamilySeedData(preferred.family._id);
-    family = { id: preferred.family._id, name: preferred.family.name, role: preferred.member.role, created: false };
+    const activeMembers = await getFamilyMembers(preferred.family._id, "active");
+    const admin = activeMembers.find((item) => item.role === "admin");
+    family = { id: preferred.family._id, name: preferred.family.name, role: preferred.member.role, memberId: preferred.member._id, isOwner: preferred.family.adminOpenid === user.openid, adminName: admin?.nickName || "管理员", created: false };
   } else {
-    family = await createDefaultFamily(user);
+    const claim = await claimDefaultFamilyInitialization(user.openid);
+    if (claim.state === "complete") {
+      const claimedFamily = await getFamilyOrNull(claim.familyId);
+      const claimedMember = claimedFamily && await getActiveMember(claim.familyId, user.openid);
+      if (claimedFamily && claimedFamily.status !== "dissolved" && claimedMember) {
+        await ensureFamilySeedData(claimedFamily._id);
+        const claimedActiveMembers = await getFamilyMembers(claim.familyId, "active");
+        const claimedAdmin = claimedActiveMembers.find((item) => item.role === "admin");
+        family = { id: claimedFamily._id, name: claimedFamily.name, role: claimedMember.role, memberId: claimedMember._id, isOwner: claimedFamily.adminOpenid === user.openid, adminName: claimedAdmin?.nickName || "管理员", created: false };
+      } else {
+        const canRepairClaimedFamily = !claimedFamily || (claimedFamily.status !== "dissolved" && claimedFamily.adminOpenid === user.openid);
+        await finishDefaultFamilyInitialization(user.openid, claim.familyId, "failed");
+        const retryClaim = await claimDefaultFamilyInitialization(user.openid, !canRepairClaimedFamily);
+        if (retryClaim.state !== "claimed") throw new Error("初始化正在进行，请稍后重试");
+        family = await createDefaultFamily(user, retryClaim.familyId);
+        await finishDefaultFamilyInitialization(user.openid, family.id, "complete");
+      }
+    } else {
+      family = await createDefaultFamily(user, claim.familyId);
+      await finishDefaultFamilyInitialization(user.openid, family.id, "complete");
+    }
   }
-  return { success: true, user, family };
+  return { success: true, user: toClientUser(user), family };
 };
 
 const listFamilies = async () => {
   const openid = getOpenid();
   const memberships = await getValidMemberships(openid);
   const families = await Promise.all(memberships.map(async ({ member, family }) => {
-    const countResult = await db.collection("family_members").where({ familyId: family._id, status: "active" }).count();
+    const activeMembers = await getFamilyMembers(family._id, "active");
+    const admin = activeMembers.find((item) => item.role === "admin");
+    const isOwner = family.adminOpenid === openid;
     return {
       id: family._id,
       name: family.name,
-      memberCount: countResult.total,
+      memberCount: activeMembers.length,
       role: member.role,
+      adminName: admin?.nickName || "管理员",
+      isOwner,
       createdAt: family.createdAt
     };
   }));
@@ -240,16 +480,23 @@ const createFamily = async (event) => {
   const name = String(event.name || "").trim();
   if (!name || name.length > 30) throw new Error("账本名称需为 1 到 30 个字符");
   const user = await ensureUser(event.profile);
+  const memberships = await getValidMemberships(user.openid);
+  if (memberships.some((item) => String(item.family.name || "").trim().toLowerCase() === name.toLowerCase())) throw new Error("账本名称已存在");
   const now = new Date();
   const familyResult = await db.collection("families").add({
     data: {
       name,
       adminOpenid: user.openid,
+      activeMemberCount: 1,
+      membershipRevision: 1,
+      seedVersion: 0,
+      initialInviteInitialized: false,
       createdAt: now,
       updatedAt: now
     }
   });
-  await db.collection("family_members").add({
+  const memberId = getStableMembershipId(familyResult._id, user.openid);
+  await db.collection("family_members").doc(memberId).set({
     data: {
       familyId: familyResult._id,
       openid: user.openid,
@@ -262,108 +509,318 @@ const createFamily = async (event) => {
     }
   });
   await initFamilyCategoriesAndAccounts(familyResult._id);
-  return { success: true, family: { id: familyResult._id, name, role: "admin" } };
+  await ensureInitialFamilyInvite(familyResult._id, user.openid);
+  await writeOperationLog(familyResult._id, "family.create", familyResult._id, {});
+  return { success: true, family: { id: familyResult._id, name, role: "admin", memberId } };
+};
+
+const renameFamily = async (event) => {
+  const admin = await requireAdmin(event.familyId);
+  const name = String(event.name || "").trim();
+  if (!name || name.length > 30) throw new Error("账本名称需为 1 到 30 个字符");
+  const memberships = await getValidMemberships(admin.openid);
+  if (memberships.some((item) => item.family._id !== event.familyId && String(item.family.name || "").trim().toLowerCase() === name.toLowerCase())) throw new Error("账本名称已存在");
+  await db.collection("families").doc(event.familyId).update({ data: { name, updatedAt: new Date() } });
+  await writeOperationLog(event.familyId, "family.rename", event.familyId, { name });
+  return { success: true, name };
+};
+
+const updateUserProfile = async (event) => {
+  const user = await ensureUser({ nickName: event.nickName, avatarUrl: event.avatarUrl });
+  const memberships = await db.collection("family_members").where({ openid: user.openid, status: "active" }).get();
+  await Promise.all(memberships.data.map((member) => db.collection("family_members").doc(member._id).update({ data: { nickName: user.nickName, avatarUrl: user.avatarUrl, updatedAt: new Date() } })));
+  await Promise.all(memberships.data.map((member) => writeOperationLog(member.familyId, "user.profile.update", user.openid, {})));
+  return { success: true, user: toClientUser(user) };
 };
 
 const initFamilyCategoriesAndAccounts = async (familyId) => {
   const now = new Date();
   const categories = [...BASELINE_EXPENSE_CATEGORIES.map((item) => ({ ...item, type: "expense" })), ...BASELINE_INCOME_CATEGORIES.map((item) => ({ ...item, type: "income" }))];
-  const existingCategories = await db.collection("categories").where({ familyId }).limit(1).get();
-  const existingAccounts = await db.collection("accounts").where({ familyId }).limit(1).get();
-  if (!existingCategories.data.length) {
-    for (const category of categories) {
-      const result = await db.collection("categories").add({ data: { familyId, name: category.name, icon: category.icon, type: category.type, parentId: null, enabled: true, createTime: now, updatedAt: now } });
-      for (const child of category.children) {
-        await db.collection("categories").add({ data: { familyId, name: child.name, icon: child.icon, type: category.type, parentId: result._id, enabled: true, createTime: now, updatedAt: now } });
-      }
+  const categoryResult = await db.collection("categories").where({ familyId }).limit(1000).get();
+  const categoryDocuments = categoryResult.data.slice();
+  for (const category of categories) {
+    let parent = categoryDocuments.find((item) => !item.parentId && item.type === category.type && normalizeName(item.name) === normalizeName(category.name));
+    if (!parent) {
+      const parentId = getStableDocumentId("seed-category", familyId, category.type, category.name);
+      parent = { _id: parentId, familyId, name: category.name, icon: category.icon, type: category.type, parentId: null, enabled: true, createTime: now, updatedAt: now };
+      await db.collection("categories").doc(parentId).set({ data: { familyId, name: category.name, icon: category.icon, type: category.type, parentId: null, enabled: true, createTime: now, updatedAt: now } });
+      categoryDocuments.push(parent);
+    }
+    for (const child of category.children) {
+      const exists = categoryDocuments.some((item) => item.parentId === parent._id && item.type === category.type && normalizeName(item.name) === normalizeName(child.name));
+      if (exists) continue;
+      const childId = getStableDocumentId("seed-category-child", familyId, category.type, category.name, child.name);
+      const childData = { _id: childId, familyId, name: child.name, icon: child.icon, type: category.type, parentId: parent._id, enabled: true, createTime: now, updatedAt: now };
+      await db.collection("categories").doc(childId).set({ data: { familyId, name: child.name, icon: child.icon, type: category.type, parentId: parent._id, enabled: true, createTime: now, updatedAt: now } });
+      categoryDocuments.push(childData);
     }
   }
-  if (!existingAccounts.data.length) {
-    for (const name of DEFAULT_ACCOUNTS) {
-      await db.collection("accounts").add({ data: { familyId, name, enabled: true, createTime: now, updatedAt: now } });
-    }
+  const accountResult = await db.collection("accounts").where({ familyId }).limit(100).get();
+  const existingAccountNames = new Set(accountResult.data.map((item) => normalizeName(item.name)));
+  for (const name of DEFAULT_ACCOUNTS) {
+    if (existingAccountNames.has(normalizeName(name))) continue;
+    const accountId = getStableDocumentId("seed-account", familyId, name);
+    await db.collection("accounts").doc(accountId).set({ data: { familyId, name, enabled: true, createTime: now, updatedAt: now } });
+    existingAccountNames.add(normalizeName(name));
   }
+  await db.collection("families").doc(familyId).update({ data: { seedVersion: DEFAULT_SEED_VERSION, seedCompletedAt: new Date(), updatedAt: new Date() } });
 };
 
 const getFamilyDetail = async (event) => {
-  const member = await getActiveMember(event.familyId, getOpenid());
+  const openid = getOpenid();
+  const member = await getActiveMember(event.familyId, openid);
   if (!member) throw new Error("你不是该家庭成员");
   const family = await getFamily(event.familyId);
-  const members = await db.collection("family_members").where({ familyId: event.familyId, status: "active" }).get();
+  const members = await getFamilyMembers(event.familyId, "active");
+  const admin = members.find((item) => item.role === "admin");
   return {
     success: true,
-    family: { id: family._id, name: family.name, role: member.role },
+    family: { id: family._id, name: family.name, role: member.role, memberId: member._id, isOwner: family.adminOpenid === openid, adminName: admin?.nickName || "管理员" },
     role: member.role,
-    members: members.data.map((item) => ({
-      openid: item.openid,
-      nickName: item.nickName,
-      avatarUrl: item.avatarUrl,
-      role: item.role,
-      joinedAt: item.joinedAt
-    }))
+    members: members.map(toClientMember)
   };
 };
 
 const createInvite = async (event) => {
   await requireAdmin(event.familyId);
+  await db.collection("family_invites").where({ familyId: event.familyId, status: "active" }).update({ data: { status: "revoked", revokedAt: new Date() } });
   const code = await createInviteCode();
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
   await db.collection("family_invites").add({
     data: { familyId: event.familyId, code, status: "active", createdBy: getOpenid(), createdAt: now, expiresAt }
   });
+  await writeOperationLog(event.familyId, "invite.create", event.familyId, {});
   return { success: true, code, expiresAt };
 };
 
-const joinFamily = async (event) => {
-  const code = String(event.code || "").trim().toUpperCase();
-  if (!code) throw new Error("请输入邀请码");
+const revokeInvite = async (event) => {
+  await requireAdmin(event.familyId);
+  const result = await db.collection("family_invites").where({ familyId: event.familyId, status: "active" }).update({ data: { status: "revoked", revokedAt: new Date() } });
+  if (!result.stats?.updated) throw new Error("当前没有可撤销的邀请码");
+  await writeOperationLog(event.familyId, "invite.revoke", event.familyId, {});
+  return { success: true };
+};
+
+const getValidInvite = async (code) => {
   const inviteResult = await db.collection("family_invites").where({ code, status: "active" }).limit(1).get();
   const invite = inviteResult.data[0];
   if (!invite || new Date(invite.expiresAt).getTime() < Date.now()) throw new Error("邀请码无效或已过期");
-  const user = await ensureUser(event.profile);
-  const existing = await db.collection("family_members").where({ familyId: invite.familyId, openid: user.openid }).limit(1).get();
-  const now = new Date();
-  if (existing.data[0]) {
-    await db.collection("family_members").doc(existing.data[0]._id).update({ data: { status: "active", joinedAt: now, updatedAt: now } });
-  } else {
-    await db.collection("family_members").add({ data: { familyId: invite.familyId, openid: user.openid, nickName: user.nickName, avatarUrl: user.avatarUrl, role: "member", status: "active", joinedAt: now, updatedAt: now } });
-  }
+  const family = await getFamilyOrNull(invite.familyId);
+  if (!family || family.status === "dissolved") throw new Error("该账本已解散，邀请码已失效");
+  return invite;
+};
+
+const verifyInvite = async (event) => {
+  const code = String(event.code || "").trim().toUpperCase();
+  if (!code) throw new Error("请输入邀请码");
+  const invite = await getValidInvite(code);
   const family = await getFamily(invite.familyId);
-  return { success: true, family: { id: family._id, name: family.name } };
+  const members = await getFamilyMembers(invite.familyId, "active");
+  const existing = members.find((item) => item.openid === getOpenid());
+  const admin = members.find((item) => item.role === "admin");
+  if (!existing && members.length >= MAX_FAMILY_MEMBERS) throw new Error("该账本成员已达上限");
+  // 客户端只需要确认信息，不返回 familyId，避免邀请码流程泄露内部账本标识。
+  return { success: true, invite: { code, familyName: family.name, adminName: admin?.nickName || "管理员", memberCount: members.length, alreadyMember: Boolean(existing) } };
+};
+
+const confirmJoinFamily = async (event) => {
+  const code = String(event.code || "").trim().toUpperCase();
+  if (!code) throw new Error("请输入邀请码");
+  const invite = await getValidInvite(code);
+  const user = await ensureUser(event.profile);
+  const now = new Date();
+  const joined = await db.runTransaction(async (transaction) => {
+    const inviteInTransaction = (await transaction.collection("family_invites").doc(invite._id).get()).data;
+    if (!inviteInTransaction || inviteInTransaction.code !== code || inviteInTransaction.status !== "active" || new Date(inviteInTransaction.expiresAt).getTime() < now.getTime()) {
+      throw new Error("邀请码无效或已过期");
+    }
+    const family = (await transaction.collection("families").doc(inviteInTransaction.familyId).get()).data;
+    if (!family || family.status === "dissolved") throw new Error("该账本已解散，邀请码已失效");
+
+    const activeResult = await transaction.collection("family_members").where({ familyId: family._id, status: "active" }).limit(FAMILY_MEMBER_QUERY_LIMIT).get();
+    const ownResult = await transaction.collection("family_members").where({ familyId: family._id, openid: user.openid }).limit(20).get();
+    const activeOwnRecords = ownResult.data.filter((item) => item.status === "active").sort(compareMembership);
+    if (activeOwnRecords.length) {
+      const current = activeOwnRecords[0];
+      await transaction.collection("family_members").doc(current._id).update({ data: { nickName: user.nickName, avatarUrl: user.avatarUrl, updatedAt: now } });
+      for (const duplicate of activeOwnRecords.slice(1)) {
+        await transaction.collection("family_members").doc(duplicate._id).update({ data: { status: "superseded", leftAt: now, updatedAt: now } });
+      }
+      if (activeOwnRecords.length > 1) {
+        await transaction.collection("families").doc(family._id).update({ data: { membershipRevision: Number(family.membershipRevision || 0) + 1, updatedAt: now } });
+      }
+      return { familyId: family._id, familyName: family.name, memberId: current._id, role: current.role, alreadyMember: true, created: false };
+    }
+
+    const reusableRecords = ownResult.data.filter((item) => item.status !== "cancelled");
+    const previous = reusableRecords.slice().sort((left, right) => {
+      const rightTime = new Date(right.leftAt || right.updatedAt || right.joinedAt || 0).getTime();
+      const leftTime = new Date(left.leftAt || left.updatedAt || left.joinedAt || 0).getTime();
+      if (rightTime !== leftTime) return rightTime - leftTime;
+      const leftStable = left._id === getStableMembershipId(family._id, user.openid);
+      const rightStable = right._id === getStableMembershipId(family._id, user.openid);
+      return Number(rightStable) - Number(leftStable);
+    })[0];
+    if (previous?.leftAt && new Date(inviteInTransaction.createdAt).getTime() <= new Date(previous.leftAt).getTime()) {
+      throw new Error("你已离开该账本，请让管理员生成新的邀请码后再加入");
+    }
+    const activeOpenids = new Set(activeResult.data.map((item) => item.openid));
+    if (activeOpenids.size >= MAX_FAMILY_MEMBERS) throw new Error("该账本成员已达上限");
+
+    const memberId = previous?._id || (ownResult.data.some((item) => item.status === "cancelled")
+      ? getStableDocumentId("member-rejoin", family._id, user.openid, inviteInTransaction._id)
+      : getStableMembershipId(family._id, user.openid));
+    const memberData = {
+      familyId: family._id,
+      openid: user.openid,
+      nickName: user.nickName,
+      avatarUrl: user.avatarUrl,
+      role: "member",
+      status: "active",
+      joinedAt: now,
+      leftAt: null,
+      updatedAt: now
+    };
+    if (previous) await transaction.collection("family_members").doc(memberId).update({ data: memberData });
+    else await transaction.collection("family_members").doc(memberId).set({ data: memberData });
+    await transaction.collection("families").doc(family._id).update({
+      data: { activeMemberCount: activeOpenids.size + 1, membershipRevision: Number(family.membershipRevision || 0) + 1, updatedAt: now }
+    });
+    return { familyId: family._id, familyName: family.name, memberId, role: "member", alreadyMember: false, created: true };
+  });
+  if (joined.created) await writeOperationLog(joined.familyId, "member.join", joined.memberId, {});
+  return {
+    success: true,
+    family: { id: joined.familyId, name: joined.familyName, role: joined.role, memberId: joined.memberId },
+    alreadyMember: joined.alreadyMember
+  };
 };
 
 const removeMember = async (event) => {
-  await requireAdmin(event.familyId);
-  if (event.openid === getOpenid()) throw new Error("管理员不能移除自己");
-  const member = await getActiveMember(event.familyId, event.openid);
-  if (!member) throw new Error("成员不存在");
-  await db.collection("family_members").doc(member._id).update({ data: { status: "left", leftAt: new Date(), updatedAt: new Date() } });
+  const openid = getOpenid();
+  const now = new Date();
+  const removedMemberId = await db.runTransaction(async (transaction) => {
+    const family = (await transaction.collection("families").doc(event.familyId).get()).data;
+    if (!family || family.status === "dissolved" || family.adminOpenid !== openid) throw new Error("只有管理员可以执行此操作");
+    const admins = await transaction.collection("family_members").where({ familyId: event.familyId, openid, status: "active", role: "admin" }).limit(20).get();
+    if (!admins.data.length) throw new Error("只有管理员可以执行此操作");
+    const member = (await transaction.collection("family_members").doc(event.memberId).get()).data;
+    if (!member || member.familyId !== event.familyId || member.status !== "active") throw new Error("成员不存在");
+    if (member.openid === openid || member.role === "admin") throw new Error("管理员不能移除自己");
+    const activeMembers = await transaction.collection("family_members").where({ familyId: event.familyId, status: "active" }).limit(FAMILY_MEMBER_QUERY_LIMIT).get();
+    const activeOpenids = new Set(activeMembers.data.map((item) => item.openid));
+    const targetRecords = activeMembers.data.filter((item) => item.openid === member.openid);
+    for (const record of targetRecords) {
+      await transaction.collection("family_members").doc(record._id).update({ data: { status: "left", leftAt: now, updatedAt: now } });
+    }
+    await transaction.collection("families").doc(event.familyId).update({
+      data: { activeMemberCount: Math.max(1, activeOpenids.size - 1), membershipRevision: Number(family.membershipRevision || 0) + 1, updatedAt: now }
+    });
+    return member._id;
+  });
+  await writeOperationLog(event.familyId, "member.remove", removedMemberId, {});
+  return { success: true };
+};
+
+const leaveFamily = async (event) => {
+  const openid = getOpenid();
+  const now = new Date();
+  const memberId = await db.runTransaction(async (transaction) => {
+    const family = (await transaction.collection("families").doc(event.familyId).get()).data;
+    if (!family || family.status === "dissolved") throw new Error("你不是该家庭成员");
+    const ownMembers = await transaction.collection("family_members").where({ familyId: event.familyId, openid, status: "active" }).limit(20).get();
+    const member = ownMembers.data.sort(compareMembership)[0];
+    if (!member) throw new Error("你不是该家庭成员");
+    if (member.role === "admin" || family.adminOpenid === openid) throw new Error("管理员请先转让管理权或处理账本");
+    const activeMembers = await transaction.collection("family_members").where({ familyId: event.familyId, status: "active" }).limit(FAMILY_MEMBER_QUERY_LIMIT).get();
+    const activeOpenids = new Set(activeMembers.data.map((item) => item.openid));
+    for (const record of ownMembers.data) {
+      await transaction.collection("family_members").doc(record._id).update({ data: { status: "left", leftAt: now, updatedAt: now } });
+    }
+    await transaction.collection("families").doc(event.familyId).update({
+      data: { activeMemberCount: Math.max(1, activeOpenids.size - 1), membershipRevision: Number(family.membershipRevision || 0) + 1, updatedAt: now }
+    });
+    return member._id;
+  });
+  await writeOperationLog(event.familyId, "member.leave", memberId, {});
   return { success: true };
 };
 
 const transferAdmin = async (event) => {
-  await requireAdmin(event.familyId);
-  const target = await getActiveMember(event.familyId, event.openid);
-  if (!target) throw new Error("目标成员不存在");
+  const openid = getOpenid();
   const now = new Date();
-  await db.collection("family_members").where({ familyId: event.familyId, openid: getOpenid(), status: "active" }).update({ data: { role: "member", updatedAt: now } });
-  await db.collection("family_members").doc(target._id).update({ data: { role: "admin", updatedAt: now } });
-  await db.collection("families").doc(event.familyId).update({ data: { adminOpenid: event.openid, updatedAt: now } });
+  const targetMemberId = await db.runTransaction(async (transaction) => {
+    const family = (await transaction.collection("families").doc(event.familyId).get()).data;
+    if (!family || family.status === "dissolved" || family.adminOpenid !== openid) throw new Error("只有管理员可以执行此操作");
+    const currentRecords = await transaction.collection("family_members").where({ familyId: event.familyId, openid, status: "active" }).limit(20).get();
+    const currentAdmin = currentRecords.data.find((item) => item.role === "admin");
+    if (!currentAdmin) throw new Error("只有管理员可以执行此操作");
+    const target = (await transaction.collection("family_members").doc(event.memberId).get()).data;
+    if (!target || target.familyId !== event.familyId || target.status !== "active" || target.role !== "member" || target.openid === openid) throw new Error("请选择其他普通成员");
+    const activeMembers = await transaction.collection("family_members").where({ familyId: event.familyId, status: "active" }).limit(FAMILY_MEMBER_QUERY_LIMIT).get();
+    const admins = activeMembers.data.filter((item) => item.role === "admin");
+    if (admins.length !== 1 || admins[0]._id !== currentAdmin._id) throw new Error("管理员状态异常，请刷新后重试");
+    await transaction.collection("family_members").doc(currentAdmin._id).update({ data: { role: "member", updatedAt: now } });
+    await transaction.collection("family_members").doc(target._id).update({ data: { role: "admin", updatedAt: now } });
+    await transaction.collection("families").doc(event.familyId).update({ data: { adminOpenid: target.openid, membershipRevision: Number(family.membershipRevision || 0) + 1, updatedAt: now } });
+    return target._id;
+  });
+  await writeOperationLog(event.familyId, "member.transfer_admin", targetMemberId, {});
   return { success: true };
 };
 
-const resetFamilyData = async (event) => {
-  await requireAdmin(event.familyId);
-  
-  // 删除当前家庭的分类和账户数据
-  await db.collection("categories").where({ familyId: event.familyId }).remove();
-  await db.collection("accounts").where({ familyId: event.familyId }).remove();
-  
-  // 重新初始化分类和账户
-  await initFamilyCategoriesAndAccounts(event.familyId);
-  
-  return { success: true, message: "分类和账户已重置" };
+const getAccountCancellationStatus = async () => {
+  const openid = getOpenid();
+  const memberships = await getValidMemberships(openid);
+  const adminFamilies = await Promise.all(memberships.filter((item) => item.member.role === "admin").map(async ({ family }) => {
+    const activeMembers = await getFamilyMembers(family._id, "active");
+    return { id: family._id, name: family.name, memberCount: activeMembers.length, canDissolve: activeMembers.length === 1 };
+  }));
+  return { success: true, canCancel: adminFamilies.length === 0, adminFamilies };
+};
+
+const dissolveFamily = async (event) => {
+  const openid = getOpenid();
+  const now = new Date();
+  const result = await db.runTransaction(async (transaction) => {
+    const familyResult = await transaction.collection("families").doc(event.familyId).get();
+    const family = familyResult.data;
+    if (!family) throw new Error("账本不存在");
+    const members = await transaction.collection("family_members").where({ familyId: event.familyId }).limit(FAMILY_MEMBER_QUERY_LIMIT).get();
+    const ownAdmin = members.data.find((item) => item.openid === openid && item.role === "admin");
+    if (!ownAdmin && family.status !== "dissolved") throw new Error("只有管理员可以解散账本");
+    if (family.status === "dissolved") return { alreadyDissolved: true };
+    const activeMembers = members.data.filter((item) => item.status === "active");
+    if (activeMembers.some((item) => item.openid !== openid) || !ownAdmin || ownAdmin.status !== "active") throw new Error("账本仍有其他成员，请先转让管理员");
+    const activeInvites = await transaction.collection("family_invites").where({ familyId: event.familyId, status: "active" }).limit(FAMILY_MEMBER_QUERY_LIMIT).get();
+    await Promise.all(activeInvites.data.map((invite) => transaction.collection("family_invites").doc(invite._id).update({ data: { status: "revoked", revokedAt: now } })));
+    await Promise.all(activeMembers.map((member) => transaction.collection("family_members").doc(member._id).update({ data: { status: "dissolved", leftAt: now, updatedAt: now } })));
+    await transaction.collection("families").doc(event.familyId).update({ data: { status: "dissolved", dissolvedAt: now, activeMemberCount: 0, membershipRevision: Number(family.membershipRevision || 0) + 1, updatedAt: now } });
+    const existingLog = await transaction.collection("operation_logs").where({ familyId: event.familyId, action: "family.dissolve", targetId: event.familyId }).limit(1).get();
+    if (!existingLog.data.length) await addOperationLogInTransaction(transaction, event.familyId, "family.dissolve", event.familyId, { reason: "account_cancellation" });
+    return { alreadyDissolved: false };
+  });
+  return { success: true, alreadyDissolved: result.alreadyDissolved };
+};
+
+const cancelAccount = async () => {
+  const openid = getOpenid();
+  const cancellation = await getAccountCancellationStatus();
+  if (!cancellation.canCancel) throw new Error("请先转让或解散你管理的账本");
+  const now = new Date();
+  const memberships = (await getMembershipsByOpenid(openid)).filter((item) => item.status === "active");
+  // Each step is idempotent so a retry can finish safely after a transient failure.
+  for (const member of memberships) {
+    await db.collection("family_members").doc(member._id).update({ data: { status: "cancelled", leftAt: now, nickName: "已注销用户", avatarUrl: "", updatedAt: now } });
+    const logId = getStableDocumentId("account-cancel-log", member.familyId, member._id);
+    await db.collection("operation_logs").doc(logId).set({ data: { familyId: member.familyId, action: "user.account.cancel", targetId: member._id, operatorOpenId: openid, summary: {}, createdAt: now } });
+  }
+  const preferences = await db.collection("bill_preferences").where({ openid }).limit(100).get();
+  await Promise.all(preferences.data.map((item) => db.collection("bill_preferences").doc(item._id).remove()));
+  const users = await getUsersByOpenid(openid);
+  await Promise.all(users.map((user) => db.collection("users").doc(user._id).remove()));
+  return { success: true };
 };
 
 const main = async (event) => {
@@ -372,12 +829,20 @@ const main = async (event) => {
     case "initUser": return await initUser(event);
     case "listFamilies": return await listFamilies();
     case "createFamily": return await createFamily(event);
+    case "renameFamily": return await renameFamily(event);
+    case "updateUserProfile": return await updateUserProfile(event);
     case "getFamilyDetail": return await getFamilyDetail(event);
     case "createInvite": return await createInvite(event);
-    case "joinFamily": return await joinFamily(event);
+    case "revokeInvite": return await revokeInvite(event);
+    case "verifyInvite": return await verifyInvite(event);
+    case "confirmJoinFamily": return await confirmJoinFamily(event);
+    case "joinFamily": return await confirmJoinFamily(event);
     case "removeMember": return await removeMember(event);
+    case "leaveFamily": return await leaveFamily(event);
     case "transferAdmin": return await transferAdmin(event);
-    case "resetFamilyData": return await resetFamilyData(event);
+    case "getAccountCancellationStatus": return await getAccountCancellationStatus();
+    case "dissolveFamily": return await dissolveFamily(event);
+    case "cancelAccount": return await cancelAccount();
     default: return fail("未知操作", "UNKNOWN_ACTION");
   }
 };
@@ -391,36 +856,60 @@ exports.main = async (event) => {
   }
 };
 const ensureFamilySeedData = async (familyId) => {
-  const categoryCount = await db.collection("categories").where({ familyId }).count();
-  const accountCount = await db.collection("accounts").where({ familyId }).count();
-  if (categoryCount.total === 0 || accountCount.total === 0) await initFamilyCategoriesAndAccounts(familyId);
   const family = await getFamily(familyId);
-  if (family.adminOpenid === getOpenid()) {
-    const inviteResult = await db.collection("family_invites").where({ familyId, status: "active" }).limit(1).get();
-    const activeInvite = inviteResult.data.find((item) => new Date(item.expiresAt).getTime() > Date.now());
-    if (!activeInvite) {
-      const now = new Date();
-      const code = await createInviteCode();
-      await db.collection("family_invites").add({ data: { familyId, code, status: "active", createdBy: getOpenid(), createdAt: now, expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000) } });
+  if (Number(family.seedVersion || 0) < DEFAULT_SEED_VERSION) {
+    const hasSeedMarker = Object.prototype.hasOwnProperty.call(family, "seedVersion");
+    if (hasSeedMarker) {
+      await initFamilyCategoriesAndAccounts(familyId);
+    } else {
+      const categoryCount = await db.collection("categories").where({ familyId }).count();
+      const accountCount = await db.collection("accounts").where({ familyId }).count();
+      if (categoryCount.total === 0 || accountCount.total === 0) await initFamilyCategoriesAndAccounts(familyId);
+      else await db.collection("families").doc(familyId).update({ data: { seedVersion: DEFAULT_SEED_VERSION, seedMigratedAt: new Date(), updatedAt: new Date() } });
     }
   }
+  if (family.adminOpenid === getOpenid()) await ensureInitialFamilyInvite(familyId, family.adminOpenid);
 };
 
-const createDefaultFamily = async (user) => {
-  const members = await db.collection("family_members").where({ openid: user.openid, status: "active" }).get();
+const createDefaultFamily = async (user, requestedFamilyId = "") => {
+  const members = { data: (await getMembershipsByOpenid(user.openid)).filter((item) => item.status === "active") };
   const usedNames = new Set();
   for (const item of members.data) {
     const family = await getFamily(item.familyId);
     if (family && family.name) usedNames.add(String(family.name).trim().toLowerCase());
   }
-  let name = "我的家庭账本";
-  let suffix = 2;
-  while (usedNames.has(name.toLowerCase())) name = `我的家庭账本 ${suffix++}`;
+  const name = computeDefaultFamilyName(usedNames);
   const now = new Date();
-  const familyResult = await db.collection("families").add({ data: { name, adminOpenid: user.openid, createdAt: now, updatedAt: now } });
-  await db.collection("family_members").add({ data: { familyId: familyResult._id, openid: user.openid, nickName: user.nickName, avatarUrl: user.avatarUrl, role: "admin", status: "active", joinedAt: now, updatedAt: now } });
-  await initFamilyCategoriesAndAccounts(familyResult._id);
-  const code = await createInviteCode();
-  await db.collection("family_invites").add({ data: { familyId: familyResult._id, code, status: "active", createdBy: user.openid, createdAt: now, expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000) } });
-  return { id: familyResult._id, name, role: "admin", created: true };
+  const familyId = requestedFamilyId || getStableDocumentId("default-family", user.openid, 1);
+  const familyRef = db.collection("families").doc(familyId);
+  let family = await getFamilyOrNull(familyId);
+  if (!family) {
+    await familyRef.set({ data: { name, adminOpenid: user.openid, activeMemberCount: 1, membershipRevision: 1, seedVersion: 0, initialInviteInitialized: false, createdAt: now, updatedAt: now } });
+    family = { _id: familyId, name, adminOpenid: user.openid };
+  }
+  if (family.status === "dissolved") throw new Error("默认账本初始化状态无效，请重试");
+  if (family.adminOpenid !== user.openid) throw new Error("默认账本初始化状态无效，请重试");
+  const memberRecords = await db.collection("family_members").where({ familyId, openid: user.openid }).limit(20).get();
+  const member = memberRecords.data.sort(compareMembership)[0];
+  const memberId = member?._id || getStableMembershipId(familyId, user.openid);
+  const memberData = { familyId, openid: user.openid, nickName: user.nickName, avatarUrl: user.avatarUrl, role: "admin", status: "active", joinedAt: member?.joinedAt || now, leftAt: null, updatedAt: now };
+  if (member) await db.collection("family_members").doc(memberId).update({ data: memberData });
+  else await db.collection("family_members").doc(memberId).set({ data: memberData });
+  await db.collection("families").doc(familyId).update({ data: { activeMemberCount: 1, membershipRevision: Number(family.membershipRevision || 0) + 1, updatedAt: now } });
+  await initFamilyCategoriesAndAccounts(familyId);
+  await ensureInitialFamilyInvite(familyId, user.openid);
+  return { id: familyId, name: family.name || name, role: "admin", memberId, created: true };
 };
+
+// 仅用于本地单元测试暴露的纯函数引用；不改变云端 main 行为。
+if (typeof module !== "undefined") {
+  module.exports.testUtils = {
+    getStableDocumentId,
+    getStableUserId,
+    getStableMembershipId,
+    normalizeName,
+    compareMembership,
+    computeDefaultFamilyName,
+    generateInviteCode
+  };
+}

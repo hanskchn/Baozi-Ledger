@@ -4,7 +4,7 @@
 
 .type-tabs {
   display: flex;
-  background: #f0f0f0;
+  background: #F5EBDD;
   border-radius: 12rpx;
   padding: 6rpx;
   margin: 24rpx 0;
@@ -21,7 +21,7 @@
 
 .type-tab.active {
   background: #fff;
-  color: #07C160;
+  color: #d96a23;
   font-weight: 600;
 }
 
@@ -36,7 +36,7 @@
   display: flex;
   align-items: center;
   padding: 24rpx 32rpx;
-  border-bottom: 1rpx solid #f5f5f5;
+  border-bottom: 1rpx solid #F5EFE6;
 }
 
 .category1-icon {
@@ -48,12 +48,19 @@
   flex: 1;
   font-size: 32rpx;
   font-weight: 600;
-  color: #333;
+  color: #5D4037;
 }
 
 .category1-edit {
   font-size: 26rpx;
-  color: #07C160;
+  color: #d96a23;
+  margin-left: 24rpx;
+}
+
+.category-action {
+  font-size: 26rpx;
+  color: #9d704f;
+  margin-left: 24rpx;
 }
 
 .category2-item {
@@ -74,22 +81,28 @@
   color: #555;
 }
 
-.category2-delete {
+.category2-edit,
+.category2-action {
   font-size: 24rpx;
-  color: #e54545;
+  color: #9d704f;
+  margin-left: 20rpx;
+}
+
+.is-disabled {
+  opacity: 0.52;
 }
 
 .category2-add {
   padding: 20rpx 32rpx 20rpx 80rpx;
   font-size: 28rpx;
-  color: #07C160;
+  color: #d96a23;
 }
 
 .btn-outline {
   background: #fff;
-  color: #07C160;
+  color: #d96a23;
   font-size: 30rpx;
-  border: 2rpx solid #07C160;
+  border: 2rpx solid #d96a23;
   border-radius: 44rpx;
   height: 80rpx;
   line-height: 76rpx;

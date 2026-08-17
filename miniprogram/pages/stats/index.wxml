@@ -1,48 +1,39 @@
 <view class="page">
-  <!-- 月份选择 -->
-  <view class="month-bar">
-    <view class="month-arrow">‹</view>
-    <view class="month-text">{{currentMonth}}</view>
-    <view class="month-arrow">›</view>
+  <view class="month-bar"><view class="month-arrow {{periodMode !== 'month' ? 'is-muted' : ''}}" data-delta="-1" bindtap="switchMonth">‹</view><text class="month-text" bindtap="selectPeriod">{{displayMonth}} ▾</text><view class="month-arrow {{periodMode !== 'month' ? 'is-muted' : ''}}" data-delta="1" bindtap="switchMonth">›</view></view>
+  <view class="summary-card"><view class="summary-item"><text class="summary-label">支出</text><text class="summary-value expense">¥{{monthExpense}}</text></view><view class="summary-item"><text class="summary-label">收入</text><text class="summary-value income">¥{{monthIncome}}</text></view><view class="summary-item"><text class="summary-label">结余</text><text class="summary-value">¥{{monthBalance}}</text></view></view>
+  <view class="stats-filters">
+    <picker class="stats-filter-picker" mode="selector" range="{{memberOptions}}" value="{{memberPickerIndex}}" bindchange="onMemberChange">
+      <text class="stats-filter {{filterMember ? 'active' : ''}}">{{filterMemberLabel || '全部成员'}} ▾</text>
+    </picker>
+    <picker class="stats-filter-picker" mode="selector" range="{{accountOptions}}" value="{{accountPickerIndex}}" bindchange="onAccountChange">
+      <text class="stats-filter {{filterAccount ? 'active' : ''}}">{{filterAccount || '全部账户'}} ▾</text>
+    </picker>
   </view>
+  <view class="chart-tabs"><view class="chart-tab {{chartType === 'expense' ? 'active' : ''}}" data-type="expense" bindtap="switchChartType">支出分类</view><view class="chart-tab {{chartType === 'income' ? 'active' : ''}}" data-type="income" bindtap="switchChartType">收入分类</view></view>
+  <view class="chart-card"><view class="chart-title">分类占比<text class="chart-tip" wx:if="{{categoryStats.length > 0}}">点击查看明细</text></view><view wx:if="{{loading && categoryStats.length === 0}}" class="chart-skeleton"><view class="skeleton-pie"></view><view class="skeleton-rank"><view class="skeleton-row"></view><view class="skeleton-row"></view><view class="skeleton-row"></view></view></view><view wx:elif="{{categoryStats.length === 0}}" class="empty-tip">本月暂无{{chartType === 'expense' ? '支出' : '收入'}}数据</view><ec-canvas wx:else id="category-chart" canvas-id="category-chart" class="chart-canvas pie-canvas" ec="{{pieEc}}"></ec-canvas><view wx:for="{{categoryStats}}" wx:key="name" class="rank-item" data-name="{{item.name}}" bindtap="onCategoryTap" hover-class="rank-item-hover" hover-stay-time="80"><text class="rank-icon">{{item.icon || '📝'}}</text><view class="rank-main"><view class="rank-text"><text>{{item.name}}</text><text>¥{{item.displayAmount}}</text></view><view class="rank-track"><view class="rank-fill {{chartType}}" style="width: {{item.percent}}%"></view></view></view><text class="rank-percent">{{item.percent}}% ›</text></view></view>
+  <view class="chart-card"><view class="chart-title">收支趋势</view><view wx:if="{{loading && dailyTrend.length === 0}}" class="chart-skeleton"><view class="skeleton-trend"></view></view><view wx:elif="{{dailyTrend.length === 0}}" class="empty-tip">当前范围暂无账单</view><view wx:else class="trend-chart-wrap"><ec-canvas id="trend-chart" canvas-id="trend-chart" class="trend-canvas" ec="{{trendEc}}"></ec-canvas></view></view>
 
-  <!-- 收支汇总 -->
-  <view class="summary-card">
-    <view class="summary-item">
-      <text class="summary-label">支出</text>
-      <text class="summary-value expense">¥{{monthExpense}}</text>
+  <!-- 自定义日期范围弹层 -->
+  <view class="date-range-mask" wx:if="{{showDateRangePicker}}" bindtap="closeDateRangePicker"></view>
+  <view class="date-range-sheet" wx:if="{{showDateRangePicker}}">
+    <view class="date-range-header">
+      <text class="date-range-cancel" bindtap="closeDateRangePicker">取消</text>
+      <text class="date-range-title">自定义日期范围</text>
+      <text class="date-range-confirm" bindtap="confirmDateRange">确定</text>
     </view>
-    <view class="summary-item">
-      <text class="summary-label">收入</text>
-      <text class="summary-value income">¥{{monthIncome}}</text>
-    </view>
-    <view class="summary-item">
-      <text class="summary-label">结余</text>
-      <text class="summary-value">¥{{monthBalance}}</text>
-    </view>
-  </view>
-
-  <!-- 图表切换 -->
-  <view class="chart-tabs">
-    <view class="chart-tab {{chartType === 'expense' ? 'active' : ''}}" data-type="expense" bindtap="switchChartType">支出</view>
-    <view class="chart-tab {{chartType === 'income' ? 'active' : ''}}" data-type="income" bindtap="switchChartType">收入</view>
-  </view>
-
-  <!-- 饼图占位 -->
-  <view class="chart-card">
-    <view class="chart-title">分类占比</view>
-    <view class="chart-placeholder">
-      <text>📊 饼图区域</text>
-      <text class="chart-hint">（ec-canvas 饼图）</text>
-    </view>
-  </view>
-
-  <!-- 折线图占位 -->
-  <view class="chart-card">
-    <view class="chart-title">每日趋势</view>
-    <view class="chart-placeholder">
-      <text>📈 折线图区域</text>
-      <text class="chart-hint">（ec-canvas 折线图）</text>
+    <view class="date-range-body">
+      <view class="date-range-row">
+        <text class="date-range-label">开始日期</text>
+        <picker mode="date" value="{{tempDateStart}}" bindchange="onTempStartChange">
+          <view class="date-range-value">{{tempDateStart || '请选择'}}</view>
+        </picker>
+      </view>
+      <view class="date-range-row">
+        <text class="date-range-label">结束日期</text>
+        <picker mode="date" value="{{tempDateEnd}}" bindchange="onTempEndChange">
+          <view class="date-range-value">{{tempDateEnd || '请选择'}}</view>
+        </picker>
+      </view>
     </view>
   </view>
 </view>

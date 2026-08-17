@@ -1,14 +1,27 @@
 <view class="page">
+  <view class="custom-nav" style="padding-top: {{statusBarHeight}}px;"><image wx:if="{{hasBrandAssets && !brandImageFailed}}" class="brand-logo" src="/images/brand/bun-logo.png" mode="aspectFit" binderror="onBrandImageError"></image><block wx:else><view class="brand-mark">包</view><text class="brand-title">包子账本</text></block></view>
   <view class="state-panel" wx:if="{{loading}}">正在准备你的家庭账本…</view>
   <view class="state-panel error" wx:elif="{{errorMessage}}">
+    <image wx:if="{{hasBrandAssets && !networkImageFailed}}" class="empty-illustration" src="/images/brand/network-error.png" mode="aspectFit" binderror="onNetworkImageError"></image>
     <text>{{errorMessage}}</text>
     <button class="retry-btn" bindtap="retryInitialize">重新尝试</button>
+  </view>
+  <view class="invite-panel" wx:elif="{{pendingInvite}}">
+    <text class="invite-title">加入家庭账本</text>
+    <text class="invite-family">{{pendingInvite.familyName}}</text>
+    <text class="invite-meta">管理员 {{pendingInvite.adminName}} · {{pendingInvite.memberCount}} 位成员</text>
+    <text class="invite-desc">加入后可查看该账本已有账单。</text>
+    <button class="invite-confirm" bindtap="confirmPendingInvite">{{pendingInvite.alreadyMember ? '切换到此账本' : '确认加入'}}</button>
+    <view class="invite-actions"><text class="invite-cancel" bindtap="declinePendingInvite">暂不加入</text><text class="invite-remove" bindtap="removePendingInvite">删除邀请</text></view>
   </view>
   <block wx:else>
   <!-- 顶部账本切换 -->
   <view class="family-bar">
-    <view class="family-name">{{familyName}}</view>
-    <view class="family-switch" bindtap="goFamily">切换 ▾</view>
+    <view class="family-title">
+      <text class="family-name">{{familyName}}</text>
+      <text class="family-role {{isOwner ? 'owner' : 'member'}}">{{isOwner ? '我的' : familyAdminName ? (familyAdminName + '的') : '成员'}}</text>
+    </view>
+    <view class="family-switch" bindtap="openFamilyPicker">切换⌄</view>
   </view>
 
   <!-- 概览卡片 -->
@@ -17,17 +30,14 @@
       <text class="overview-label">今日支出</text>
       <text class="overview-value expense">¥{{todayExpense}}</text>
     </view>
-    <view class="overview-divider"></view>
     <view class="overview-item">
       <text class="overview-label">本月支出</text>
       <text class="overview-value expense">¥{{monthExpense}}</text>
     </view>
-    <view class="overview-divider"></view>
     <view class="overview-item">
       <text class="overview-label">本月收入</text>
       <text class="overview-value income">¥{{monthIncome}}</text>
     </view>
-    <view class="overview-divider"></view>
     <view class="overview-item">
       <text class="overview-label">本月结余</text>
       <text class="overview-value">¥{{monthBalance}}</text>
@@ -35,25 +45,80 @@
   </view>
 
   <!-- 记一笔按钮 -->
-  <view class="quick-actions">
-    <button class="add-bill-btn expense-btn" data-type="expense" bindtap="goAddBill">记支出</button>
-    <button class="add-bill-btn income-btn" data-type="income" bindtap="goAddBill">记收入</button>
-  </view>
+  <view class="fab" bindtap="openAddBill">+</view>
 
   <!-- 最近账单 -->
   <view class="section">
-    <view class="section-title">最近账单</view>
+    <view class="section-head"><text class="section-title">最近账单</text><text class="view-all" bindtap="goBills">查看全部 ›</text></view>
     <view class="bill-list">
-      <view class="empty-tip" wx:if="{{recentBills.length === 0}}">暂无账单，快去记一笔吧～</view>
-      <view class="bill-item" wx:for="{{recentBills}}" wx:key="_id">
-        <view class="bill-icon">{{item.category2Icon || '📝'}}</view>
-        <view class="bill-info">
-          <text class="bill-category">{{item.category2}}</text>
-          <text class="bill-remark">{{item.remark || item.member}}</text>
+      <view class="empty-tip" wx:if="{{recentBills.length === 0}}"><image wx:if="{{hasBrandAssets && !emptyImageFailed}}" class="empty-illustration" src="/images/brand/empty-bills.png" mode="aspectFit" binderror="onEmptyImageError"></image><view wx:else class="empty-mark">包</view><text>还没有账单，记一笔吧~</text></view>
+      <block wx:if="{{recentBills.length > 0}}" wx:for="{{groupedBills}}" wx:key="key" wx:for-item="group">
+        <view class="bill-group-head">
+          <text class="bill-date-label">{{group.title}}</text>
+          <text class="bill-date-sum">
+            <text wx:if="{{group.expense !== '0.00'}}" class="sum-expense">支出 ¥{{group.expense}}</text>
+            <text wx:if="{{group.income !== '0.00'}}" class="sum-income">收入 ¥{{group.income}}</text>
+          </text>
         </view>
-        <text class="bill-amount {{item.type}}">{{item.type === 'expense' ? '-' : '+'}}¥{{item.displayAmount}}</text>
-      </view>
+        <view class="bill-swipe-wrap" wx:for="{{group.bills}}" wx:key="_id" wx:for-item="bill">
+          <!-- 删除按钮（左滑后露出） -->
+          <view class="bill-delete" data-id="{{bill._id}}" data-can-operate="{{bill.canOperate}}" bindtap="onDeleteTap">删除</view>
+          <!-- 可滑动内容（左滑露出删除按钮） -->
+          <view
+            class="bill-swipe-content {{slidBillId === bill._id ? 'open' : ''}}"
+            style="transform: translateX({{swipeOffsetMap[bill._id] !== undefined ? swipeOffsetMap[bill._id] : (slidBillId === bill._id ? -180 : 0)}}rpx); {{swipeAnimating ? '' : 'transition: transform 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);'}}"
+            data-id="{{bill._id}}"
+            data-can-operate="{{bill.canOperate}}"
+            bindtouchstart="onSwipeStart"
+            bindtouchmove="onSwipeMove"
+            bindtouchend="onSwipeEnd"
+          >
+            <view class="bill-item" data-id="{{bill._id}}" data-can-operate="{{bill.canOperate}}" catchtap="onItemTap">
+              <view class="bill-icon">{{bill.category2Icon || '📝'}}</view>
+              <view class="bill-info">
+                <view class="bill-line1">
+                  <text class="bill-category">{{bill.category2}}</text>
+                  <text wx:if="{{bill.merchant}}" class="bill-merchant">· {{bill.merchant}}</text>
+                </view>
+                <view class="bill-meta">
+                  <text wx:if="{{bill.account}}" class="meta-item">💳 {{bill.account}}</text>
+                  <text wx:if="{{bill.member}}" class="meta-item">👤 {{bill.member}}</text>
+                  <text wx:if="{{bill.displayTime}}" class="meta-item">{{bill.displayTime}}</text>
+                </view>
+                <text wx:if="{{bill.remark}}" class="bill-remark">备注：{{bill.remark}}</text>
+              </view>
+              <text class="bill-amount {{bill.type}}">{{bill.type === 'expense' ? '-' : '+'}}¥{{bill.displayAmount}}</text>
+            </view>
+          </view>
+        </view>
+      </block>
     </view>
   </view>
   </block>
+  <view class="sheet-mask" wx:if="{{showFamilyPicker}}" bindtap="closeFamilyPicker"></view>
+  <view class="family-sheet" wx:if="{{showFamilyPicker}}">
+    <view class="sheet-title">切换账本</view>
+    <view class="family-option" wx:for="{{families}}" wx:key="id" data-id="{{item.id}}" bindtap="switchFamily">
+      <view class="family-option-main">
+        <text class="family-option-name">{{item.name}}</text>
+        <text class="family-option-role {{item.isOwner ? 'owner' : 'member'}}">{{item.isOwner ? '我的' : item.adminName + '的'}}</text>
+      </view>
+      <text class="family-option-check" wx:if="{{item.id === currentFamilyId}}">✓</text>
+    </view>
+    <view class="manage-family" bindtap="goFamily">管理账本</view>
+  </view>
+  <view class="swipe-guide {{showSwipeGuide ? 'show' : ''}}" bindtap="closeSwipeGuide">
+    <view class="swipe-guide-hand">👈</view>
+    <view class="swipe-guide-arrow"></view>
+    <view class="swipe-guide-text">左滑账单可删除</view>
+  </view>
+  <view class="welcome-mask" wx:if="{{showWelcome}}" catchtouchmove="noop">
+    <view class="welcome-card">
+      <image wx:if="{{hasBrandAssets && !welcomeImageFailed}}" class="welcome-illustration" src="/images/brand/welcome-guide.png" mode="aspectFit" binderror="onWelcomeImageError"></image>
+      <view wx:else class="welcome-mark">包</view>
+      <text class="welcome-title">欢迎来到包子账本</text>
+      <text class="welcome-desc">已为你创建「我的家庭账本」，可以开始记下第一笔支出了。支持邀请家人一起记账、查看统计与预算。</text>
+      <button class="welcome-btn" bindtap="closeWelcome">开始记账</button>
+    </view>
+  </view>
 </view>

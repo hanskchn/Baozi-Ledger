@@ -1,0 +1,18 @@
+<view class="page">
+  <view wx:if="{{loading}}" class="state">正在加载账单...</view>
+  <view wx:elif="{{bill}}">
+    <view class="hero"><text>{{bill.type === "expense" ? "支出" : "收入"}}</text><text class="amount {{bill.type}}">{{bill.type === "expense" ? "-" : "+"}}¥{{amountInput}}</text></view>
+    <view class="detail-card">
+      <view class="row"><text>分类</text><text>{{bill.category1}} · {{bill.category2}}</text></view>
+      <view class="row"><text>日期</text><text>{{bill.date}}</text></view>
+      <view class="row"><text>账户</text><text>{{bill.account}}</text></view>
+      <view class="row"><text>成员</text><text>{{bill.member}}</text></view>
+      <view class="row"><text>商家</text><text>{{bill.merchant || "未填写"}}</text></view>
+      <view class="row"><text>备注</text><text>{{bill.remark || "未填写"}}</text></view>
+    </view>
+    <view wx:if="{{canOperate}}" class="actions">
+      <button bindtap="startEdit" class="primary">编辑账单</button>
+      <button bindtap="removeBill" class="danger">删除账单</button>
+    </view>
+  </view>
+</view>

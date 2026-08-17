@@ -1,42 +1,195 @@
 const app = getApp();
+const brand = require("../../utils/brand");
 
 Page({
   data: {
     familyName: "",
+    currentFamilyId: "",
+    isOwner: false,
+    familyAdminName: "",
     todayExpense: 0,
     monthExpense: 0,
     monthIncome: 0,
     monthBalance: 0,
     recentBills: [],
     loading: true,
-    errorMessage: ""
+    errorMessage: "",
+    showFamilyPicker: false,
+    families: [],
+    groupedBills: [],
+    hasBrandAssets: brand.available,
+    brandImageFailed: false,
+    emptyImageFailed: false,
+    welcomeImageFailed: false,
+    networkImageFailed: false,
+    showWelcome: false
+    ,pendingInvite: null
+    ,statusBarHeight: 20
+    ,slidBillId: ""
+    ,showSwipeGuide: false
+    ,swipeOffsetMap: {}
+    ,swipeAnimating: false
   },
 
-  async onShow() {
-    this.setData({ loading: true, errorMessage: "" });
+  onLoad() {
+    const win = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync();
+    this.setData({ statusBarHeight: win.statusBarHeight || 20 });
+  },
+
+  onShow() {
+    // 刚记完账/编辑/删除过账单：跳过首页摘要缓存，避免短暂闪旧数据
+    const homeDirty = app.globalData.homeSummaryDirty === true;
+    if (homeDirty) app.globalData.homeSummaryDirty = false;
+    // 首次进入展示一次"左滑删除"引导提示（本地已记住则不重复）
+    if (!wx.getStorageSync("hasSeenSwipeGuide") && this.data.recentBills && this.data.recentBills.length > 0) {
+      this.setData({ showSwipeGuide: true });
+      this._swipeGuideTimer = setTimeout(() => {
+        this.closeSwipeGuide();
+      }, 4000);
+    }
+    // 1) 先用 storage 缓存立刻渲染骨架内容（hasCache 标记避免覆盖式 setData）
+    const hasCache = this.applyCachedHome({ skipIfDirty: homeDirty });
+    // 2) 后台刷新：silent=true 时不重复展示 loading，错误也仅在无缓存时落到 errorMessage
+    this.refreshHome({ silent: hasCache });
+  },
+
+  applyCachedHome(options) {
+    const skipIfDirty = options && options.skipIfDirty === true;
+    const familyId = app.globalData.currentFamilyId;
+    if (!familyId) {
+      this.setData({ loading: true, errorMessage: "" });
+      return false;
+    }
+    if (skipIfDirty) {
+      // 刚记完账回首页：跳过旧缓存，直接走 loading → 拉新
+      this.setData({ loading: true, errorMessage: "" });
+      return false;
+    }
+    let cached = null;
+    try { cached = wx.getStorageSync(`home:summary:${familyId}`); } catch (error) { cached = null; }
+    if (!cached || !cached.summary) {
+      this.setData({ loading: true, errorMessage: "" });
+      return false;
+    }
+    const bills = (cached.recentBills || []).map((b) => ({ ...b, canOperate: b.canOperate === true, displayTime: (b.date || "").substring(11, 16) }));
+    this.setData({
+      currentFamilyId: familyId,
+      familyName: cached.familyName || app.globalData.currentFamily?.name || "",
+      isOwner: cached.isOwner === true || app.globalData.currentFamily?.isOwner === true,
+      familyAdminName: cached.familyAdminName || app.globalData.currentFamily?.adminName || "",
+      todayExpense: cached.summary.todayExpense || "0.00",
+      monthExpense: cached.summary.monthExpense || "0.00",
+      monthIncome: cached.summary.monthIncome || "0.00",
+      monthBalance: cached.summary.monthBalance || "0.00",
+      recentBills: bills,
+      groupedBills: this._groupRecentBills(bills),
+      hasCache: true,
+      loading: false,
+      errorMessage: ""
+    });
+    // 缓存有账单时也尝试展示引导
+    if (bills.length > 0 && !wx.getStorageSync("hasSeenSwipeGuide")) {
+      this.setData({ showSwipeGuide: true });
+      if (this._swipeGuideTimer) clearTimeout(this._swipeGuideTimer);
+      this._swipeGuideTimer = setTimeout(() => {
+        this.closeSwipeGuide();
+      }, 4000);
+    }
+    return true;
+  },
+
+  async refreshHome(options = {}) {
+    const silent = options.silent === true;
+    if (!silent) this.setData({ loading: true, errorMessage: "" });
     try {
-      await app.ensureInitialized();
+      const initialized = await app.ensureInitialized();
+      if (app.globalData.initializationNotice) {
+        wx.showToast({ title: app.globalData.initializationNotice, icon: "none" });
+        app.globalData.initializationNotice = "";
+      }
+      if (initialized.pendingInvite) {
+        this.setData({ pendingInvite: initialized.pendingInvite });
+        return;
+      }
+      this.setData({ pendingInvite: null });
+      if (app.globalData.currentFamily && app.globalData.currentFamily.created && !wx.getStorageSync("hasSeenWelcome")) {
+        this.setData({ showWelcome: true });
+      }
       await Promise.all([this.loadFamilyInfo(), this.loadHomeData()]);
+      // 后台预加载记账页分类/账户/成员数据，点"+"时秒开
+      this.precacheFormOptions().catch(() => {});
     } catch (error) {
-      this.setData({ errorMessage: error.message || "初始化失败，请重试" });
+      // 有缓存时静默失败，避免覆盖已展示的内容；无缓存才回退到 errorMessage
+      if (!this.data.hasCache) {
+        this.setData({ errorMessage: error.message || "初始化失败，请重试" });
+      } else {
+        console.warn("首页后台刷新失败，保留缓存数据", error);
+      }
     } finally {
-      this.setData({ loading: false });
+      if (!silent) this.setData({ loading: false });
+    }
+  },
+
+  async precacheFormOptions() {
+    const familyId = app.globalData.currentFamilyId;
+    if (!familyId) return;
+    // 10 分钟内有缓存就不重复请求
+    try {
+      const cached = wx.getStorageSync("formOptions:" + familyId);
+      if (cached && cached.ts && Date.now() - cached.ts < 5 * 60 * 1000) return;
+    } catch (e) {}
+    const [catExpense, catIncome, accounts, members] = await Promise.all([
+      wx.cloud.callFunction({ name: "accountingFunctions", data: { action: "listCategories", familyId, type: "expense" } }),
+      wx.cloud.callFunction({ name: "accountingFunctions", data: { action: "listCategories", familyId, type: "income" } }),
+      wx.cloud.callFunction({ name: "accountingFunctions", data: { action: "listAccounts", familyId } }),
+      wx.cloud.callFunction({ name: "accountingFunctions", data: { action: "listMembers", familyId } })
+    ]).catch(() => [null, null, null, null]);
+    if (!catExpense || !catIncome || !accounts || !members) return;
+    try {
+      wx.setStorageSync("formOptions:" + familyId, {
+        ts: Date.now(),
+        categories: catExpense.result?.categories || [],
+        incomeCategories: catIncome.result?.categories || [],
+        accounts: accounts.result?.accounts || [],
+        members: members.result?.members || [],
+        preferences: null
+      });
+    } catch (e) {}
+  },
+
+  async onPullDownRefresh() {
+    try {
+      await Promise.all([this.loadFamilyInfo(), this.loadHomeData()]);
+    } finally {
+      wx.stopPullDownRefresh();
     }
   },
 
   async loadFamilyInfo() {
     const currentFamilyId = app.globalData.currentFamilyId;
     if (!currentFamilyId) {
-      this.setData({ familyName: "未加入家庭" });
+      this.setData({ familyName: "未加入家庭", isOwner: false, familyAdminName: "" });
       return;
     }
+    const currentFamily = app.globalData.currentFamily || {};
+    this.setData({
+      currentFamilyId,
+      familyName: currentFamily.name || "",
+      isOwner: currentFamily.isOwner === true,
+      familyAdminName: currentFamily.adminName || ""
+    });
     
     try {
       const result = await wx.cloud.callFunction({
         name: "ledgerFunctions",
-        data: { type: "getFamilyDetail", familyId: currentFamilyId }
+        data: { action: "getFamilyDetail", familyId: currentFamilyId }
       });
-      this.setData({ familyName: result.result.family.name });
+      const family = result.result?.family || {};
+      this.setData({
+        familyName: family.name || "",
+        isOwner: family.isOwner === true,
+        familyAdminName: family.adminName || ""
+      });
     } catch (error) {
       console.error("加载家庭信息失败", error);
     }
@@ -46,66 +199,122 @@ Page({
     try {
       const currentFamilyId = app.globalData.currentFamilyId;
       if (!currentFamilyId) return;
-      
+
       // 获取所有账单
-      const result = await wx.cloud.callFunction({
-        name: "accountingFunctions",
-        data: { action: "listBills", familyId: currentFamilyId }
-      });
-      
-      const bills = result.result.bills || [];
-      
-      // 计算统计数据
-      let todayExpense = 0;
-      let monthExpense = 0;
-      let monthIncome = 0;
-      
       const now = new Date();
-      const today = this.formatDate(now);
-      const month = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
-      
+      const today = this.formatShanghaiDate(now);
+      const month = today.substring(0, 7);
+      // Step 4 上线后改用 getHomeSummary，首页只需 4 个数字 + 最近 10 条账单。
+      const [billResponse, summaryResponse] = await Promise.all([
+        wx.cloud.callFunction({ name: "accountingFunctions", data: { action: "listBills", familyId: currentFamilyId, limit: 10, sort: "dateDesc" } }),
+        wx.cloud.callFunction({ name: "accountingFunctions", data: { action: "getHomeSummary", familyId: currentFamilyId, month } })
+      ]);
+      const bills = billResponse.result && billResponse.result.bills || [];
+      const summary = summaryResponse.result || {};
+
       const recentBills = bills
-        .filter(b => !b.deleted)
-        .sort((a, b) => b.date.localeCompare(a.date))
-        .slice(0, 10)
         .map(bill => ({
           ...bill,
-          displayAmount: (bill.amount / 100).toFixed(2)
+          canOperate: bill.canOperate === true,
+          displayAmount: (bill.amount / 100).toFixed(2),
+          displayTime: (bill.date || "").substring(11, 16)
         }));
-      
-      bills.forEach(bill => {
-        const amount = bill.amount / 100;
-        const billDate = bill.date.substring(0, 10);
-        const billMonth = billDate.substring(0, 7);
-        
-        if (bill.type === "expense") {
-          if (billDate === today) todayExpense += amount;
-          if (billMonth === month) monthExpense += amount;
-        } else {
-          if (billMonth === month) monthIncome += amount;
-        }
-      });
-      
+      const groupedBills = this._groupRecentBills(recentBills);
+
+      const todayExpense = Number(summary.todayExpense || 0).toFixed(2);
+      const monthExpense = Number(summary.totalExpense || 0).toFixed(2);
+      const monthIncome = Number(summary.totalIncome || 0).toFixed(2);
+      const monthBalance = Number(summary.balance || (Number(monthIncome) - Number(monthExpense))).toFixed(2);
+
       this.setData({
-        todayExpense: todayExpense.toFixed(2),
-        monthExpense: monthExpense.toFixed(2),
-        monthIncome: monthIncome.toFixed(2),
-        monthBalance: (monthIncome - monthExpense).toFixed(2),
-        recentBills
+        todayExpense,
+        monthExpense,
+        monthIncome,
+        monthBalance,
+        recentBills,
+        groupedBills,
+        hasCache: true
       });
+
+      // 首次有账单时展示左滑删除引导
+      if (recentBills.length > 0 && !wx.getStorageSync("hasSeenSwipeGuide") && !this.data.showSwipeGuide) {
+        this.setData({ showSwipeGuide: true });
+        if (this._swipeGuideTimer) clearTimeout(this._swipeGuideTimer);
+        this._swipeGuideTimer = setTimeout(() => {
+          this.closeSwipeGuide();
+        }, 4000);
+      }
+
+      // 把首页快照写入 storage，供下次 onShow 即时渲染（applyCachedHome）。
+      try {
+        wx.setStorageSync(`home:summary:${currentFamilyId}`, {
+          ts: Date.now(),
+          familyName: this.data.familyName,
+          isOwner: this.data.isOwner,
+          familyAdminName: this.data.familyAdminName,
+          summary: { todayExpense, monthExpense, monthIncome, monthBalance },
+          recentBills,
+          groupedBills
+        });
+      } catch (storageError) {
+        console.warn("首页快照写入缓存失败", storageError);
+      }
     } catch (error) {
       console.error("加载首页数据失败", error);
     }
   },
 
-  formatDate(date) {
+  onFamilyChanged() {
+    // 账本未变化（如首次初始化广播）：跳过重复加载，避免 onShow 与 onFamilyChanged 各请求一次
+    const newFamilyId = app.globalData.currentFamilyId;
+    if (newFamilyId && newFamilyId === this.data.currentFamilyId) return;
+    // 切账本后清首页缓存并强制刷新
+    try {
+      wx.removeStorageSync(`home:summary:${newFamilyId}`);
+    } catch (error) { /* ignore */ }
+    this.setData({ bills: [], recentBills: [], groupedBills: [], todayExpense: "0.00", monthExpense: "0.00", monthIncome: "0.00", monthBalance: "0.00", loading: true, errorMessage: "" });
+    this.refreshHome({ silent: false });
+  },
+
+  formatShanghaiDate(date) {
+    const shifted = new Date(date.getTime() + 8 * 60 * 60 * 1000);
     const pad = (value) => String(value).padStart(2, "0");
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`;
   },
 
   retryInitialize() {
     app.initializePromise = null;
     wx.removeStorageSync("currentFamilyId");
+    this.onShow();
+  },
+
+  async confirmPendingInvite() {
+    const code = this.data.pendingInvite?.code;
+    if (!code) return;
+    try {
+      const response = await wx.cloud.callFunction({ name: "ledgerFunctions", data: { action: "confirmJoinFamily", code } });
+      if (!response.result?.success) throw new Error(response.result?.message || "加入失败");
+      app.removePendingInvite(code);
+      wx.setStorageSync("currentFamilyId", response.result.family.id);
+      app.globalData.currentFamilyId = response.result.family.id;
+      app.globalData.currentFamily = response.result.family;
+      app.initializePromise = null;
+      wx.showToast({ title: response.result.alreadyMember ? "已切换账本" : "加入成功" });
+      this.onShow();
+    } catch (error) { wx.showToast({ title: error.message || "加入失败", icon: "none" }); }
+  },
+
+  declinePendingInvite() {
+    wx.showToast({ title: "邀请已保留，可稍后确认", icon: "none" });
+  },
+
+  async removePendingInvite() {
+    const code = this.data.pendingInvite?.code;
+    if (!code) return;
+    const modal = await new Promise((resolve) => wx.showModal({ title: "删除待处理邀请", content: "删除后不会加入该账本，也不会影响对方账本。", success: resolve }));
+    if (!modal.confirm) return;
+    app.removePendingInvite(code);
+    app.initializePromise = null;
     this.onShow();
   },
 
@@ -116,5 +325,242 @@ Page({
 
   goFamily() {
     wx.navigateTo({ url: "/pages/family/index" });
+  },
+
+  goBills() {
+    wx.switchTab({ url: "/pages/bills/index" });
+  },
+
+  _groupRecentBills(bills) {
+    const weekdayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+    const now = new Date(Date.now() + 8 * 60 * 60 * 1000);
+    const today = now.getUTCFullYear() + "-" + String(now.getUTCMonth() + 1).padStart(2, "0") + "-" + String(now.getUTCDate()).padStart(2, "0");
+    const groups = [];
+    const indexMap = {};
+    (bills || []).forEach((bill) => {
+      const day = (bill.date || "").substring(0, 10);
+      if (!day) return;
+      if (indexMap[day] === undefined) {
+        const [year, month, date] = day.split("-").map(Number);
+        const weekday = weekdayNames[new Date(year, month - 1, date).getDay()];
+        const title = day === today ? "今天" : (year + "年" + month + "月" + date + "日 " + weekday);
+        indexMap[day] = groups.length;
+        groups.push({ key: day, title, expense: 0, income: 0, bills: [] });
+      }
+      const group = groups[indexMap[day]];
+      const amount = Number(bill.amount || 0) / 100;
+      if (bill.type === "expense") group.expense += amount;
+      else if (bill.type === "income") group.income += amount;
+      group.bills.push(bill);
+    });
+    groups.forEach((group) => {
+      group.expense = group.expense.toFixed(2);
+      group.income = group.income.toFixed(2);
+    });
+    return groups;
+  },
+
+  openAddBill() {
+    wx.navigateTo({ url: "/pages/addBill/index?type=expense" });
+  },
+
+  noop() {},
+
+  onBrandImageError() { this.setData({ brandImageFailed: true }); },
+
+  onEmptyImageError() { this.setData({ emptyImageFailed: true }); },
+
+  onWelcomeImageError() { this.setData({ welcomeImageFailed: true }); },
+
+  onNetworkImageError() { this.setData({ networkImageFailed: true }); },
+
+  closeWelcome() {
+    wx.setStorageSync("hasSeenWelcome", true);
+    this.setData({ showWelcome: false });
+  },
+
+  // —— 首页最近账单：左滑删除 / 点击编辑 / 引导提示 ——
+
+  // 左滑开始：记录起点位置，切换到跟手模式（无过渡动画）
+  onSwipeStart(e) {
+    const billId = e.currentTarget.dataset.id;
+    const canOperate = e.currentTarget.dataset.canOperate === "true" || e.currentTarget.dataset.canOperate === true;
+    // 无操作权限的账单不响应左滑
+    if (!canOperate) return;
+    // 收起引导（首次左滑即视为已学会）
+    this.closeSwipeGuide();
+    // 如果当前有其他已展开的账单，先收起
+    if (this.data.slidBillId && this.data.slidBillId !== billId) {
+      this.setData({ slidBillId: "" });
+    }
+    const touch = e.touches[0];
+    this._swipeStartX = touch.clientX;
+    this._swipeStartY = touch.clientY;
+    this._swipeBillId = billId;
+    this._swipeBaseX = this.data.slidBillId === billId ? -180 : 0;
+    this._isDragging = false;
+    this._dragDirection = null;
+    this.setData({ swipeAnimating: true });
+  },
+
+  // 拖动中：跟手移动（只更新当前账单的偏移量）
+  onSwipeMove(e) {
+    const billId = e.currentTarget.dataset.id;
+    if (!this._swipeBillId || this._swipeBillId !== billId) return;
+    const canOperate = e.currentTarget.dataset.canOperate === "true" || e.currentTarget.dataset.canOperate === true;
+    if (!canOperate) return;
+    const touch = e.touches[0];
+    const deltaX = touch.clientX - this._swipeStartX;
+    const deltaY = touch.clientY - this._swipeStartY;
+    // 首次移动时判断方向，纵向滚动则放弃横向滑动
+    if (!this._dragDirection) {
+      if (Math.abs(deltaX) < 6 && Math.abs(deltaY) < 6) return;
+      if (Math.abs(deltaY) > Math.abs(deltaX)) {
+        this._dragDirection = "vertical";
+        this._swipeBillId = null;
+        return;
+      }
+      this._dragDirection = "horizontal";
+      this._isDragging = true;
+    }
+    if (this._dragDirection !== "horizontal") return;
+    // 转换为 rpx 近似值（750rpx = 屏幕宽度）
+    const sysInfo = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync();
+    const rpxRatio = 750 / sysInfo.windowWidth;
+    let offsetRpx = this._swipeBaseX + deltaX * rpxRatio;
+    // 限制范围：0 到 -180，略加超出回弹的手感
+    if (offsetRpx > 0) offsetRpx = offsetRpx * 0.2;
+    if (offsetRpx < -220) offsetRpx = -220 + (offsetRpx + 220) * 0.2;
+    const map = {};
+    map[billId] = Math.round(offsetRpx);
+    this.setData({ swipeOffsetMap: Object.assign({}, this.data.swipeOffsetMap, map) });
+  },
+
+  // 滑动结束：根据偏移量和速度决定展开或收起
+  onSwipeEnd(e) {
+    const billId = e.currentTarget.dataset.id;
+    if (!this._swipeBillId || this._swipeBillId !== billId) return;
+    const canOperate = e.currentTarget.dataset.canOperate === "true" || e.currentTarget.dataset.canOperate === true;
+    this._swipeBillId = null;
+    if (!canOperate) {
+      this.setData({ slidBillId: "", swipeAnimating: false, swipeOffsetMap: {} });
+      return;
+    }
+    // 当前偏移量（rpx）
+    const currentOffset = this.data.swipeOffsetMap[billId] !== undefined
+      ? this.data.swipeOffsetMap[billId]
+      : (this.data.slidBillId === billId ? -180 : 0);
+    // 阈值：超过一半（-90rpx）则展开，否则收起
+    const shouldOpen = currentOffset < -90;
+    this.setData({
+      slidBillId: shouldOpen ? billId : "",
+      swipeAnimating: false,
+      swipeOffsetMap: {}
+    });
+  },
+
+  // 点击账单主体：有权限才跳编辑页
+  onItemTap(e) {
+    const billId = e.currentTarget.dataset.id;
+    const canOperate = e.currentTarget.dataset.canOperate === "true" || e.currentTarget.dataset.canOperate === true;
+    // 已滑开（露出删除按钮）时点击主体视为收起，不跳转，避免误触进编辑
+    if (this.data.slidBillId === billId) {
+      this.setData({ slidBillId: "" });
+      return;
+    }
+    if (!canOperate) {
+      // 普通成员点击别人账单：轻提示，不进编辑
+      wx.showToast({ title: "仅管理员或记账人可编辑", icon: "none" });
+      return;
+    }
+    wx.navigateTo({ url: `/pages/addBill/index?billId=${billId}` });
+  },
+
+  // 点击删除按钮
+  onDeleteTap(e) {
+    const billId = e.currentTarget.dataset.id;
+    const canOperate = e.currentTarget.dataset.canOperate === "true" || e.currentTarget.dataset.canOperate === true;
+    if (!canOperate) {
+      wx.showToast({ title: "无删除权限", icon: "none" });
+      return;
+    }
+    const bill = this.data.recentBills.find((item) => item._id === billId);
+    if (!bill) return;
+    const self = this;
+    wx.showModal({
+      title: "删除账单",
+      content: "删除后不可恢复，确定删除这笔账单吗？",
+      success: async (modal) => {
+        if (!modal.confirm) {
+          self.setData({ slidBillId: "" });
+          return;
+        }
+        try {
+          await wx.cloud.callFunction({
+            name: "accountingFunctions",
+            data: { action: "deleteBill", familyId: app.globalData.currentFamilyId, billId, version: bill.version }
+          });
+          // 删除成功：从列表移除 + 重新拉一次首页摘要，并标记账单/首页缓存需刷新
+          self.setData({ slidBillId: "" });
+          app.globalData.billsDirty = true;
+          app.globalData.homeSummaryDirty = true;
+          wx.showToast({ title: "已删除", icon: "success" });
+          self.refreshHome({ silent: true });
+        } catch (error) {
+          wx.showToast({ title: error.message || "删除失败", icon: "none" });
+          self.setData({ slidBillId: "" });
+        }
+      }
+    });
+  },
+
+  // 收起删除按钮
+  closeDelete() {
+    this.setData({ slidBillId: "" });
+  },
+
+  // 关闭左滑删除引导提示并记住
+  closeSwipeGuide() {
+    if (this._swipeGuideTimer) {
+      clearTimeout(this._swipeGuideTimer);
+      this._swipeGuideTimer = null;
+    }
+    if (this.data.showSwipeGuide) {
+      wx.setStorageSync("hasSeenSwipeGuide", true);
+      this.setData({ showSwipeGuide: false });
+    }
+  },
+
+  async openFamilyPicker() {
+    try {
+      const response = await wx.cloud.callFunction({ name: "ledgerFunctions", data: { action: "listFamilies" } });
+      this.setData({ families: response.result.families || [], showFamilyPicker: true });
+    } catch (error) {
+      wx.showToast({ title: error.message || "加载账本失败", icon: "none" });
+    }
+  },
+
+  closeFamilyPicker() { this.setData({ showFamilyPicker: false }); },
+
+  async switchFamily(event) {
+    const familyId = event.currentTarget.dataset.id;
+    try {
+      const response = await wx.cloud.callFunction({ name: "ledgerFunctions", data: { action: "getFamilyDetail", familyId } });
+      if (!response.result?.success) throw new Error(response.result?.message || "切换账本失败");
+      const familyInfo = response.result.family;
+      app.onFamilyChange(familyInfo);
+      this.setData({
+        showFamilyPicker: false,
+        loading: true,
+        familyName: familyInfo.name || "",
+        isOwner: familyInfo.isOwner === true,
+        familyAdminName: familyInfo.adminName || ""
+      });
+      await Promise.all([this.loadFamilyInfo(), this.loadHomeData()]);
+    } catch (error) {
+      wx.showToast({ title: error.message || "切换账本失败", icon: "none" });
+    } finally {
+      this.setData({ loading: false });
+    }
   }
 });

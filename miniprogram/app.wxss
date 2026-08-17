@@ -1,7 +1,17 @@
 page {
-  background: #f6f6f6;
+  --primary: #FF8C42;
+  --primary-light: #FFF3E6;
+  --primary-deep: #FF6B35;
+  --expense: #FF6B35;
+  --income: #4CAF50;
+  --expense-bg: #FFF0EB;
+  --income-bg: #E8F5E9;
+  --text-primary: #5D4037;
+  --text-secondary: #8D6E63;
+  --text-tertiary: #BCAAA4;
+  background: #FFF8EC;
   font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
-  color: #333;
+  color: #5D4037;
   font-size: 28rpx;
 }
 

@@ -5,7 +5,7 @@
 .section-title {
   font-size: 30rpx;
   font-weight: 600;
-  color: #333;
+  color: #5D4037;
   margin: 32rpx 0 16rpx;
 }
 
@@ -27,7 +27,7 @@
 .family-name {
   font-size: 32rpx;
   font-weight: 500;
-  color: #333;
+  color: #5D4037;
 }
 
 .family-members {
@@ -38,8 +38,8 @@
 
 .family-current {
   font-size: 24rpx;
-  color: #07C160;
-  background: #e8f8ee;
+  color: #D96A23;
+  background: #FFF3E6;
   padding: 6rpx 20rpx;
   border-radius: 20rpx;
 }
@@ -47,9 +47,9 @@
 .btn-outline {
   margin-top: 16rpx;
   background: #fff;
-  color: #07C160;
+  color: #D96A23;
   font-size: 30rpx;
-  border: 2rpx solid #07C160;
+  border: 2rpx solid #D96A23;
   border-radius: 44rpx;
   height: 80rpx;
   line-height: 76rpx;
@@ -62,7 +62,7 @@
 
 .member-transfer {
   font-size: 26rpx;
-  color: #07C160;
+  color: #D96A23;
 }
 
 .btn-outline::after {
@@ -83,7 +83,7 @@
   height: 72rpx;
   border-radius: 50%;
   margin-right: 20rpx;
-  background: #f0f0f0;
+  background: #F5EBDD;
 }
 
 .member-info {
@@ -94,7 +94,7 @@
 
 .member-name {
   font-size: 30rpx;
-  color: #333;
+  color: #5D4037;
   font-weight: 500;
 }
 
@@ -108,3 +108,5 @@
   font-size: 26rpx;
   color: #e54545;
 }
+
+.leave-btn { margin-top: 24rpx; background: #FFF0EB; color: #FF6B35; font-size: 28rpx; border-radius: 40rpx; }

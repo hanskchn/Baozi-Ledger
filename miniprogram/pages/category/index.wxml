@@ -5,19 +5,21 @@
   </view>
 
   <view class="category-list">
-    <view class="category-group" wx:for="{{categories}}" wx:key="id">
+    <view class="category-group {{item.enabled === false ? 'is-disabled' : ''}}" wx:for="{{categories}}" wx:key="id">
       <view class="category1-header">
         <text class="category1-icon">{{item.icon}}</text>
         <text class="category1-name">{{item.name}}</text>
         <text class="category1-edit" data-id="{{item.id}}" bindtap="editCategory">编辑</text>
+        <text class="category-action" data-id="{{item.id}}" data-enabled="{{item.enabled !== false}}" bindtap="toggleCategory">{{item.enabled === false ? '恢复' : '停用'}}</text>
       </view>
       <view class="category2-list">
-        <view class="category2-item" wx:for="{{item.children}}" wx:for-item="child" wx:key="id">
+        <view class="category2-item {{child.enabled === false ? 'is-disabled' : ''}}" wx:for="{{item.children}}" wx:for-item="child" wx:key="id">
           <text class="category2-icon">{{child.icon}}</text>
           <text class="category2-name">{{child.name}}</text>
-          <text class="category2-delete" data-id="{{child.id}}" bindtap="deleteCategory">删除</text>
+          <text class="category2-edit" data-id="{{child.id}}" bindtap="editChildCategory">编辑</text>
+          <text class="category2-action" data-id="{{child.id}}" data-enabled="{{child.enabled !== false}}" bindtap="toggleCategory">{{child.enabled === false ? '恢复' : '停用'}}</text>
         </view>
-        <view class="category2-add" data-pid="{{item.id}}" bindtap="addCategory2">+ 添加二级分类</view>
+        <view wx:if="{{item.enabled !== false}}" class="category2-add" data-pid="{{item.id}}" bindtap="addCategory2">+ 添加二级分类</view>
       </view>
     </view>
   </view>

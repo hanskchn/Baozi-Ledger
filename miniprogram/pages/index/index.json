@@ -1,3 +1,6 @@
 {
-  "navigationBarTitleText": "家庭记账本"
+  "navigationBarTitleText": "包子账本",
+  "navigationStyle": "custom",
+  "enablePullDownRefresh": true,
+  "backgroundColor": "#FFF8EC"
 }

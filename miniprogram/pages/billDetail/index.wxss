@@ -1,0 +1,15 @@
+.page { min-height: 100vh; padding: 32rpx; background: #FFF8EC; }
+.state { padding-top: 240rpx; text-align: center; color: #8D6E63; }
+.hero { padding: 48rpx 0; text-align: center; color: #8D6E63; }
+.amount { display: block; margin-top: 12rpx; font-size: 64rpx; font-weight: 700; }
+.amount.expense { color: #FF6B35; }
+.amount.income { color: #4CAF50; }
+.amount-input { width: 100%; color: #5D4037; font-size: 56rpx; font-weight: 700; text-align: center; }
+.detail-card { padding: 8rpx 28rpx; border-radius: 20rpx; background: #FFFFFF; box-shadow: 0 4rpx 16rpx rgba(93, 64, 55, .08); }
+.row { display: flex; justify-content: space-between; gap: 24rpx; padding: 26rpx 0; border-bottom: 1rpx solid #F5EFE6; color: #8D6E63; }
+.row text:last-child { max-width: 65%; color: #5D4037; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.actions { margin-top: 36rpx; }
+.actions button { margin: 16rpx 0; border-radius: 14rpx; }
+.primary { background: #FF8C42; color: #FFFFFF; }
+.secondary { background: #FFF3E6; color: #FF8C42; }
+.danger { background: #FFF0EB; color: #FF6B35; }

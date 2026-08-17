@@ -4,14 +4,15 @@
     <text class="tip-desc">文件需包含「支出」和「收入」两个 Sheet，系统会自动映射分类、账户等字段。</text>
   </view>
 
-  <button class="btn-outline" bindtap="chooseFile">选择文件</button>
+  <view class="empty-state" wx:if="{{!fileName && previewData.length === 0}}"><image wx:if="{{hasBrandAssets && !emptyImageFailed}}" class="empty-illustration" src="/images/brand/import-empty.png" mode="aspectFit" binderror="onEmptyImageError"></image><view wx:else class="empty-mark">📄</view></view>
+  <button class="btn-outline" bindtap="chooseFile" loading="{{previewing}}">选择 xlsx 文件</button>
 
   <view class="file-info" wx:if="{{fileName}}">
     <text class="file-name">📄 {{fileName}}</text>
   </view>
 
   <view class="preview-section" wx:if="{{previewData.length > 0}}">
-    <view class="preview-title">预览（共 {{previewData.length}} 条）</view>
+    <view class="preview-title">预览（共 {{total}} 条，以下展示前 {{previewData.length}} 条）</view>
     <view class="preview-item" wx:for="{{previewData}}" wx:key="index">
       <text class="preview-type">{{item.type}}</text>
       <text class="preview-date">{{item.date}}</text>
@@ -20,5 +21,12 @@
     </view>
   </view>
 
+  <view class="mapping-section" wx:if="{{memberMappings.length > 0}}">
+    <view class="preview-title">成员归属映射</view>
+    <view class="mapping-item" wx:for="{{memberMappings}}" wx:key="sourceName"><text>{{item.sourceName}}</text><text class="mapping-arrow">→</text><text>{{item.targetName}}</text><text class="mapping-note">{{item.matched ? '已匹配' : (item.ambiguous ? '昵称重复，归入管理员' : '未匹配，归入管理员')}}</text></view>
+  </view>
+
   <button class="save-btn" wx:if="{{previewData.length > 0}}" bindtap="confirmImport" loading="{{importing}}">确认导入</button>
+  <view class="done-state" wx:if="{{lastBatchId && previewData.length === 0 && !fileName}}"><image wx:if="{{hasBrandAssets && !doneImageFailed}}" class="empty-illustration" src="/images/brand/import-done.png" mode="aspectFit" binderror="onDoneImageError"></image><view wx:else class="empty-mark">✅</view><text class="done-text">导入完成，可查看账单或继续导入</text></view>
+  <button class="btn-outline" wx:if="{{lastBatchId}}" bindtap="rollbackLastImport">撤销刚刚导入</button>
 </view>

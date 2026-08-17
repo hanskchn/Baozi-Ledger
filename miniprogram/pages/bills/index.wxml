@@ -1,40 +1,76 @@
 <view class="page">
-  <!-- 月份选择 -->
-  <view class="month-bar">
-    <view class="month-arrow" data-delta="-1" bindtap="changeMonth">‹</view>
-    <text class="month-text">{{filterMonth}}</text>
-    <view class="month-arrow" data-delta="1" bindtap="changeMonth">›</view>
-  </view>
+  <!-- 顶部控制区 -->
+  <view class="top-card">
+    <view class="period-row">
+      <view class="period-arrow" data-delta="-1" bindtap="changeMonth">‹</view>
+      <picker wx:if="{{!filterDateStart && !filterDateEnd}}" class="period-picker" mode="date" fields="month" value="{{filterMonth}}" bindchange="onMonthPickerChange">
+        <text class="period-label">{{periodDisplay}} ▾</text>
+      </picker>
+      <text wx:else class="period-label">{{periodDisplay}}</text>
+      <view class="period-arrow" data-delta="1" bindtap="changeMonth">›</view>
+    </view>
 
-  <!-- 筛选栏 -->
-  <view class="filter-bar">
-    <view class="filter-item {{filterCategory ? 'active' : ''}}" data-key="filterCategory" data-value="{{filterCategory}}" bindtap="changeFilter">
-      <text wx:if="{{filterCategory}}">{{filterCategory}}</text>
-      <text wx:else>分类 ▾</text>
+    <view class="tool-row">
+      <view class="tool-pill {{hasActiveFilters ? 'active' : ''}}" bindtap="openFilter" hover-class="tool-pill-hover" hover-stay-time="80">
+        <text class="tool-icon">⚙</text>
+        <text>筛选</text>
+        <text wx:if="{{activeFilterCount > 0}}" class="tool-badge">{{activeFilterCount}}</text>
+      </view>
+      <view class="tool-pill" bindtap="goSearch" hover-class="tool-pill-hover" hover-stay-time="80">
+        <text class="tool-icon">🔍</text>
+        <text>搜索</text>
+      </view>
+      <view wx:if="{{isAdmin}}" class="tool-text" bindtap="exportCurrentFilters">导出</view>
+      <view wx:if="{{hasActiveFilters}}" class="tool-text clear" bindtap="clearFilters">清空筛选</view>
     </view>
-    <view class="filter-item {{filterMember ? 'active' : ''}}" data-key="filterMember" data-value="{{filterMember}}" bindtap="changeFilter">
-      <text wx:if="{{filterMember}}">{{filterMember}}</text>
-      <text wx:else>成员 ▾</text>
+
+    <view wx:if="{{activeFilterTags.length > 0}}" class="chip-row">
+      <view wx:for="{{activeFilterTags}}" wx:key="key" class="chip" data-key="{{item.key}}" bindtap="removeFilterTag" hover-class="chip-hover" hover-stay-time="80">
+        <text class="chip-label">{{item.label}}</text>
+        <text class="chip-close">×</text>
+      </view>
     </view>
-    <view class="filter-item {{filterAccount ? 'active' : ''}}" data-key="filterAccount" data-value="{{filterAccount}}" bindtap="changeFilter">
-      <text wx:if="{{filterAccount}}">{{filterAccount}}</text>
-      <text wx:else>账户 ▾</text>
-    </view>
-    <view class="filter-search" bindtap="goSearch">🔍</view>
   </view>
 
   <!-- 账单列表 -->
   <view class="bill-list">
-    <view class="empty-tip" wx:if="{{bills.length === 0}}">暂无账单记录</view>
-    <view class="bill-group" wx:for="{{bills}}" wx:key="_id">
-      <view class="bill-date">{{item.date.substring(0, 10)}}</view>
-      <view class="bill-item" data-id="{{item._id}}" bindtap="onItemTap">
-        <view class="bill-icon">{{item.category2Icon || '📝'}}</view>
-        <view class="bill-info">
-          <text class="bill-category">{{item.category2}}</text>
-          <text class="bill-remark">{{item.remark || item.member}}</text>
+    <view class="empty-tip" wx:if="{{bills.length === 0 && !loadingMore}}">暂无账单记录</view>
+    <view class="bill-group" wx:for="{{billGroups}}" wx:for-item="group" wx:key="day">
+      <view class="bill-date">
+        <text class="bill-date-label">{{group.title}}</text>
+        <text class="bill-date-sum">
+          <text wx:if="{{group.expense !== '0.00'}}" class="sum-expense">支出 ¥{{group.expense}}</text>
+          <text wx:if="{{group.income !== '0.00'}}" class="sum-income">收入 ¥{{group.income}}</text>
+        </text>
+      </view>
+      <view class="bill-swipe-wrap" wx:for="{{group.items}}" wx:for-item="item" wx:key="_id">
+        <view class="bill-delete" data-id="{{item._id}}" data-can-operate="{{item.canOperate}}" bindtap="onDeleteTap">删除</view>
+        <view
+          class="bill-swipe-content {{slidBillId === item._id ? 'open' : ''}}"
+          style="transform: translateX({{swipeOffsetMap[item._id] !== undefined ? swipeOffsetMap[item._id] : (slidBillId === item._id ? -180 : 0)}}rpx); {{swipeAnimating ? '' : 'transition: transform 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);'}}"
+          data-id="{{item._id}}"
+          data-can-operate="{{item.canOperate}}"
+          bindtouchstart="onSwipeStart"
+          bindtouchmove="onSwipeMove"
+          bindtouchend="onSwipeEnd"
+        >
+          <view class="bill-item" data-id="{{item._id}}" data-can-operate="{{item.canOperate}}" catchtap="onItemTap">
+            <view class="bill-icon">{{item.category2Icon || '📝'}}</view>
+            <view class="bill-info">
+              <view class="bill-line1">
+                <text class="bill-category">{{item.category2}}</text>
+                <text wx:if="{{item.merchant}}" class="bill-merchant">· {{item.merchant}}</text>
+              </view>
+              <view class="bill-meta">
+                <text wx:if="{{item.account}}" class="meta-item">💳 {{item.account}}</text>
+                <text wx:if="{{item.member}}" class="meta-item">👤 {{item.member}}</text>
+                <text wx:if="{{item.displayTime}}" class="meta-item">{{item.displayTime}}</text>
+              </view>
+              <text wx:if="{{item.remark}}" class="bill-remark">备注：{{item.remark}}</text>
+            </view>
+            <text class="bill-amount {{item.type}}">{{item.type === 'expense' ? '-' : '+'}}¥{{item.displayAmount}}</text>
+          </view>
         </view>
-        <text class="bill-amount {{item.type}}">{{item.type === 'expense' ? '-' : '+'}}¥{{item.displayAmount}}</text>
       </view>
     </view>
   </view>

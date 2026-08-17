@@ -1,4 +1,4 @@
-<view class="page">
+<view class="page {{editMode ? 'is-edit' : ''}}">
   <!-- 收支切换 -->
   <view class="type-tabs">
     <view class="type-tab {{type === 'expense' ? 'active expense' : ''}}" data-type="expense" bindtap="switchType">支出</view>
@@ -22,31 +22,40 @@
   </view>
 
   <!-- 账户 -->
-  <view class="form-row" bindtap="selectAccount">
-    <text class="form-label">账户</text>
-    <view class="form-value">
-      <text wx:if="{{account}}">{{account}}</text>
-      <text class="placeholder" wx:else>请选择账户</text>
+  <picker class="form-picker" mode="selector" range="{{accounts}}" range-key="name" bindchange="onAccountChange">
+    <view class="form-row">
+      <text class="form-label">账户</text>
+      <view class="form-value">
+        <text wx:if="{{account}}">{{account}}</text>
+        <text class="placeholder" wx:else>请选择账户</text>
+      </view>
+      <text class="form-arrow">›</text>
     </view>
-    <text class="form-arrow">›</text>
-  </view>
+  </picker>
 
   <!-- 成员 -->
-  <view class="form-row {{isAdmin ? '' : 'readonly'}}" bindtap="selectMember">
+  <picker wx:if="{{isAdmin}}" class="form-picker" mode="selector" range="{{members}}" range-key="displayName" bindchange="onMemberChange">
+    <view class="form-row">
+      <text class="form-label">成员</text>
+      <view class="form-value">
+        <text wx:if="{{memberId}}">{{memberName}}</text>
+        <text class="placeholder" wx:else>请选择成员</text>
+      </view>
+      <text class="form-arrow">›</text>
+    </view>
+  </picker>
+  <view wx:else class="form-row readonly">
     <text class="form-label">成员</text>
     <view class="form-value">
-      <text wx:if="{{member}}">{{memberName}}</text>
+      <text wx:if="{{memberId}}">{{memberName}}</text>
       <text class="placeholder" wx:else>请选择成员</text>
     </view>
-    <text class="form-arrow" wx:if="{{isAdmin}}">›</text>
   </view>
 
-  <!-- 日期 -->
-  <view class="form-row">
-    <text class="form-label">日期</text>
-    <picker mode="date" value="{{date}}" bindchange="onDateChange">
-      <view class="form-value"><text>{{date.substring(0, 10)}}</text></view>
-    </picker>
+  <!-- 日期时间 -->
+  <view class="form-row" bindtap="openDateTimeSheet">
+    <text class="form-label">时间</text>
+    <view class="form-value"><text>{{date}}</text></view>
     <text class="form-arrow">›</text>
   </view>
 
@@ -63,7 +72,10 @@
   </view>
 
   <!-- 保存按钮 -->
-  <button class="save-btn" loading="{{saving}}" disabled="{{saving}}" bindtap="saveBill">保存</button>
+  <button wx:if="{{!formLoading}}" class="save-btn" loading="{{saving}}" disabled="{{saving}}" bindtap="saveBill">{{editMode ? '保存修改' : '保存'}}</button>
+
+  <!-- 编辑模式：删除账单 -->
+  <button wx:if="{{editMode && !formLoading}}" class="delete-btn" loading="{{saving}}" disabled="{{saving}}" bindtap="deleteBill">删除这笔账单</button>
 
   <!-- 分类选择器弹窗 -->
   <view class="category-picker" wx:if="{{showCategoryPicker}}" catchtap="closeCategoryPicker">
@@ -72,20 +84,76 @@
         <text class="picker-title">选择分类</text>
         <text class="picker-close" bindtap="closeCategoryPicker">✕</text>
       </view>
-      <scroll-view class="picker-body" scroll-y>
-        <view class="category-group" wx:for="{{categories}}" wx:key="id">
-          <view class="category1-item" bindtap="selectCategory1" data-category="{{item}}">
-            <text class="category1-icon">{{item.icon}}</text>
-            <text class="category1-name">{{item.name}}</text>
-          </view>
-          <view class="category2-list" wx:if="{{item.children && item.children.length > 0}}">
-            <view class="category2-item" wx:for="{{item.children}}" wx:for-item="child" wx:key="id" bindtap="selectCategory2" data-child="{{child}}">
-              <text class="category2-icon">{{child.icon}}</text>
-              <text class="category2-name">{{child.name}}</text>
+      <view class="picker-body">
+        <view class="category-recent" wx:if="{{recentCategories.length > 0}}">
+          <text class="category-recent-title">最近使用</text>
+          <scroll-view class="category-recent-scroll" scroll-x>
+            <view class="category-recent-list">
+              <view
+                class="category2-item category-recent-item"
+                wx:for="{{recentCategories}}"
+                wx:key="name"
+                bindtap="selectRecentCategory"
+                data-item="{{item}}"
+              >
+                <text class="category2-icon">{{item.icon}}</text>
+                <text class="category2-name">{{item.name}}</text>
+              </view>
             </view>
-          </view>
+          </scroll-view>
         </view>
-      </scroll-view>
+        <view class="category-split">
+          <scroll-view class="category1-sidebar" scroll-y>
+            <view
+              class="category1-item {{selectedCategory1 === item.name ? 'active' : ''}}"
+              wx:for="{{categories}}"
+              wx:key="id"
+              bindtap="selectCategory1"
+              data-category="{{item}}"
+            >
+              <text class="category1-icon">{{item.icon}}</text>
+              <text class="category1-name">{{item.name}}</text>
+            </view>
+          </scroll-view>
+          <scroll-view class="category2-panel" scroll-y>
+            <view class="category2-grid">
+              <view
+                class="category2-item"
+                wx:for="{{activeCategory2List}}"
+                wx:for-item="child"
+                wx:key="id"
+                bindtap="selectCategory2"
+                data-child="{{child}}"
+              >
+                <text class="category2-icon">{{child.icon}}</text>
+                <text class="category2-name">{{child.name}}</text>
+              </view>
+            </view>
+          </scroll-view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 日期时间选择弹层 -->
+  <view class="time-mask" wx:if="{{showDateTimeSheet}}" catchtap="closeDateTimeSheet"></view>
+  <view class="time-sheet" wx:if="{{showDateTimeSheet}}">
+    <view class="time-sheet-header">
+      <text class="time-sheet-cancel" bindtap="closeDateTimeSheet">取消</text>
+      <text class="time-sheet-title">选择日期时间</text>
+      <text class="time-sheet-confirm" bindtap="confirmDateTimeSheet">确定</text>
+    </view>
+    <view class="time-sheet-body">
+      <picker mode="date" value="{{datePart}}" bindchange="onDateSheetChange">
+        <view class="time-col date-col"><text class="time-col-value date-value">{{datePart}}</text><text class="time-col-unit">日期</text></view>
+      </picker>
+      <picker mode="selector" range="{{hours}}" value="{{hours.indexOf(timeHour)}}" bindchange="onHourChange">
+        <view class="time-col"><text class="time-col-value">{{timeHour}}</text><text class="time-col-unit">时</text></view>
+      </picker>
+      <text class="time-colon">:</text>
+      <picker mode="selector" range="{{minutes}}" value="{{minutes.indexOf(timeMinute)}}" bindchange="onMinuteChange">
+        <view class="time-col"><text class="time-col-value">{{timeMinute}}</text><text class="time-col-unit">分</text></view>
+      </picker>
     </view>
   </view>
 </view>

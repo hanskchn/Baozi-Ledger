@@ -1,16 +1,69 @@
+const app = getApp();
+
 Page({
   data: {
     nickName: "微信用户",
     avatarUrl: "",
-    familyName: "我的家庭"
+    familyName: "我的家庭",
+    isAdmin: false,
+    isOwner: false,
+    familyAdminName: ""
   },
 
-  onShow() {
-    // TODO: 加载用户信息
+  async onShow() {
+    try {
+      const initialized = await app.ensureInitialized();
+      const user = app.globalData.userInfo || initialized.user;
+      const family = app.globalData.currentFamily || initialized.family;
+      this.setData({
+        nickName: user.nickName || "微信用户",
+        avatarUrl: user.avatarUrl || "",
+        familyName: family?.name || "待确认邀请",
+        isAdmin: family?.role === "admin",
+        isOwner: family?.isOwner === true,
+        familyAdminName: family?.adminName || ""
+      });
+    } catch (error) {
+      wx.showToast({ title: error.message || "加载失败", icon: "none" });
+    }
   },
 
   goFamily() {
     wx.navigateTo({ url: "/pages/family/index" });
+  },
+
+  async editProfile() {
+    const modal = await new Promise((resolve) => wx.showModal({ title: "修改昵称", editable: true, content: this.data.nickName, success: resolve }));
+    const nickName = (modal.content || "").trim();
+    if (!modal.confirm || !nickName) return;
+    try {
+      const response = await wx.cloud.callFunction({ name: "ledgerFunctions", data: { action: "updateUserProfile", nickName, avatarUrl: this.data.avatarUrl } });
+      if (!response.result?.success) throw new Error(response.result?.message || "修改失败");
+      app.globalData.userInfo = response.result.user;
+      this.setData({ nickName: response.result.user.nickName });
+      wx.showToast({ title: "已修改" });
+    } catch (error) { wx.showToast({ title: error.message || "修改失败", icon: "none" }); }
+  },
+
+  noop() {},
+
+  async onChooseAvatar(event) {
+    const tempFilePath = event.detail?.avatarUrl;
+    if (!tempFilePath) return;
+    try {
+      wx.showLoading({ title: "上传头像", mask: true });
+      const extension = tempFilePath.split(".").pop() || "png";
+      const upload = await wx.cloud.uploadFile({ cloudPath: "avatars/" + Date.now() + "." + extension, filePath: tempFilePath });
+      const response = await wx.cloud.callFunction({ name: "ledgerFunctions", data: { action: "updateUserProfile", nickName: this.data.nickName, avatarUrl: upload.fileID } });
+      if (!response.result?.success) throw new Error(response.result?.message || "头像更新失败");
+      app.globalData.userInfo = response.result.user;
+      this.setData({ avatarUrl: response.result.user.avatarUrl });
+      wx.showToast({ title: "头像已更新" });
+    } catch (error) {
+      wx.showToast({ title: error.message || "头像更新失败", icon: "none" });
+    } finally {
+      wx.hideLoading();
+    }
   },
 
   goBudget() {
@@ -29,7 +82,60 @@ Page({
     wx.navigateTo({ url: "/pages/import/index" });
   },
 
-  goExport() {
-    // TODO: 导出数据
+  goLogs() {
+    wx.navigateTo({ url: "/pages/logs/index" });
+  },
+
+  async callLedger(action, data = {}) {
+    const response = await wx.cloud.callFunction({ name: "ledgerFunctions", data: { ...data, action } });
+    if (!response.result?.success) throw new Error(response.result?.message || "操作失败");
+    return response.result;
+  },
+
+  async cancelAccount() {
+    try {
+      const status = await this.callLedger("getAccountCancellationStatus");
+      if (!status.canCancel) {
+        const dissolvable = status.adminFamilies.filter((item) => item.canDissolve);
+        const transferRequired = status.adminFamilies.filter((item) => !item.canDissolve);
+        if (transferRequired.length) {
+          const names = transferRequired.map((item) => item.name).join("、");
+          wx.showModal({ title: "暂不能注销", content: "你仍管理“" + names + "”。请先在家庭管理中转让管理员，再回来继续注销。", confirmText: "去管理", success: (modal) => { if (modal.confirm) this.goFamily(); } });
+          return;
+        }
+        const names = dissolvable.map((item) => "“" + item.name + "”").join("、");
+        const confirmation = await new Promise((resolve) => wx.showModal({ title: "处理后继续注销", content: "你是 " + names + " 的唯一成员。继续将逐个解散这些账本，然后注销账号；账本不可恢复。", confirmText: "继续处理", confirmColor: "#D64545", success: resolve }));
+        if (!confirmation.confirm) return;
+        wx.showLoading({ title: "处理中", mask: true });
+        try {
+          await dissolvable.reduce((promise, family) => promise.then(() => this.callLedger("dissolveFamily", { familyId: family.id })), Promise.resolve());
+        } finally {
+          wx.hideLoading();
+        }
+        return await this.cancelAccount();
+      }
+      const confirmation = await new Promise((resolve) => wx.showModal({ title: "注销账号", content: "注销后将退出所有账本、删除个人资料和记账偏好。历史账单与审计记录会保留并显示为“已注销用户”。此操作不可恢复。", confirmText: "确认注销", confirmColor: "#D64545", success: resolve }));
+      if (!confirmation.confirm) return;
+      await this.callLedger("cancelAccount");
+      app.globalData.userInfo = null;
+      app.globalData.currentFamily = null;
+      app.globalData.currentFamilyId = "";
+      app.initializePromise = null;
+      wx.removeStorageSync("currentFamilyId");
+      wx.removeStorageSync("pendingInviteCodes");
+      wx.showModal({ title: "账号已注销", content: "你的个人资料和账本访问权限已移除。再次登录将视为新用户。", showCancel: false, success: () => wx.reLaunch({ url: "/pages/index/index" }) });
+    } catch (error) {
+      wx.showToast({ title: error.message || "注销失败", icon: "none" });
+    }
+  },
+
+  async goExport() {
+    if (!app.globalData.currentFamilyId) { wx.showToast({ title: "请先确认加入账本", icon: "none" }); return; }
+    try {
+      const result = await wx.cloud.callFunction({ name: "accountingFunctions", data: { action: "exportBills", familyId: app.globalData.currentFamilyId } });
+      if (!result.result?.success || !result.result.tempFileURL) throw new Error(result.result?.message || "导出失败");
+      const downloaded = await wx.downloadFile({ url: result.result.tempFileURL });
+      await wx.openDocument({ filePath: downloaded.tempFilePath, showMenu: true });
+    } catch (error) { wx.showToast({ title: error.message || "导出失败", icon: "none" }); }
   }
 });

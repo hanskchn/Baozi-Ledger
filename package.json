@@ -1,0 +1,11 @@
+{
+  "name": "family-ledger-miniprogram",
+  "version": "1.0.0",
+  "private": true,
+  "description": "家庭记账本微信小程序 - 发布前可重复验证脚本",
+  "scripts": {
+    "test": "node scripts/test.js",
+    "verify": "node scripts/verify.js",
+    "check": "node scripts/verify.js && node scripts/test.js"
+  }
+}

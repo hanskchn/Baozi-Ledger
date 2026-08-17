@@ -5,7 +5,7 @@
   </view>
 
   <view class="result-list">
-    <view class="empty-tip" wx:if="{{keyword && results.length === 0}}">未找到相关账单</view>
+    <view class="empty-tip" wx:if="{{keyword && results.length === 0}}"><image wx:if="{{hasBrandAssets && !emptyImageFailed}}" class="empty-illustration" src="/images/brand/search-empty.png" mode="aspectFit" binderror="onEmptyImageError"></image><view wx:else class="empty-mark">🔍</view><text>未找到相关账单</text></view>
     <view class="empty-tip" wx:if="{{!keyword}}">输入关键词搜索账单</view>
     <view class="result-item" wx:for="{{results}}" wx:key="id" data-id="{{item.id}}" bindtap="onItemTap">
       <view class="result-icon">{{item.icon}}</view>

@@ -11,23 +11,25 @@
   </view>
 
   <button class="btn-outline" bindtap="createFamily">+ 创建新家庭</button>
-  <button class="btn-outline" bindtap="joinByInvite">输入邀请码加入</button>
-  <button class="btn-outline" bindtap="resetFamilyData" wx:if="{{isAdmin}}">重置分类和账户</button>
+  <button class="btn-outline" bindtap="renameCurrentFamily" wx:if="{{isAdmin}}">修改当前账本名称</button>
+
 
   <view class="section-title">家庭成员</view>
   <view class="member-list">
-    <view class="member-item" wx:for="{{members}}" wx:key="openid">
+    <view class="member-item" wx:for="{{members}}" wx:key="memberId">
       <image class="member-avatar" src="{{item.avatarUrl || '/images/icons/avatar.png'}}"></image>
       <view class="member-info">
         <text class="member-name">{{item.nickName}}</text>
         <text class="member-role">{{item.role === 'admin' ? '管理员' : '成员'}}</text>
       </view>
       <view class="member-actions" wx:if="{{item.role !== 'admin' && isAdmin}}">
-        <text class="member-transfer" data-openid="{{item.openid}}" bindtap="transferAdmin">移交</text>
-        <text class="member-remove" data-openid="{{item.openid}}" bindtap="removeMember">移除</text>
+        <text class="member-transfer" data-member-id="{{item.memberId}}" bindtap="transferAdmin">移交</text>
+        <text class="member-remove" data-member-id="{{item.memberId}}" bindtap="removeMember">移除</text>
       </view>
     </view>
   </view>
 
-  <button class="btn-outline" bindtap="showInvite" wx:if="{{isAdmin}}">邀请成员加入</button>
+  <button class="btn-outline share-invite" open-type="share" wx:if="{{isAdmin}}">分享邀请链接</button>
+  <button class="btn-outline" bindtap="revokeInvite" wx:if="{{isAdmin && inviteCode}}">撤销当前邀请链接</button>
+  <button class="leave-btn" bindtap="leaveFamily" wx:if="{{!isAdmin && currentFamilyId}}">退出当前账本</button>
 </view>

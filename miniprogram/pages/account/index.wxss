@@ -19,13 +19,16 @@
 .account-name {
   flex: 1;
   font-size: 30rpx;
-  color: #333;
+  color: #5D4037;
 }
 
-.account-delete {
+.account-action {
   font-size: 26rpx;
-  color: #e54545;
+  color: #9D704F;
 }
+
+.account-edit { font-size: 26rpx; color: #D96A23; margin-right: 24rpx; }
+.is-disabled { opacity: .52; }
 
 .empty-tip {
   text-align: center;
@@ -36,9 +39,9 @@
 
 .btn-outline {
   background: #fff;
-  color: #07C160;
+  color: #D96A23;
   font-size: 30rpx;
-  border: 2rpx solid #07C160;
+  border: 2rpx solid #D96A23;
   border-radius: 44rpx;
   height: 80rpx;
   line-height: 76rpx;
