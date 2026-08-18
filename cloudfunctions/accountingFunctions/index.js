@@ -347,6 +347,7 @@ const listAllCategories = async (event) => {
 const createCategory = async (event) => {
   await requireAdmin(event.familyId);
   const name = String(event.name || "").trim();
+  const icon = String(event.icon || "").trim().slice(0, 10);
   if (!name || name.length > 20 || !["expense", "income"].includes(event.type)) throw new Error("分类信息不完整");
   if (event.parentId) {
     const parent = await db.collection("categories").doc(event.parentId).get();
@@ -355,7 +356,7 @@ const createCategory = async (event) => {
   const siblings = await db.collection("categories").where({ familyId: event.familyId, type: event.type, parentId: event.parentId || null }).get();
   if (siblings.data.some((item) => normalizeName(item.name) === normalizeName(name))) throw new Error("分类名称已存在");
   const now = new Date();
-  const result = await db.collection("categories").add({ data: { familyId: event.familyId, type: event.type, name, icon: String(event.icon || "❓"), parentId: event.parentId || null, enabled: true, createTime: now, updatedAt: now } });
+  const result = await db.collection("categories").add({ data: { familyId: event.familyId, type: event.type, name, icon: icon || (event.type === "income" ? "💰" : "📝"), parentId: event.parentId || null, enabled: true, createTime: now, updatedAt: now } });
   memCacheDel(`categories:${event.familyId}`);
   await writeOperationLog(event.familyId, "category.create", result._id, { name });
   return { success: true, id: result._id };
@@ -376,7 +377,7 @@ const setCategoryEnabled = async (event) => {
   }
   const now = new Date();
   await db.collection("categories").doc(category._id).update({ data: { enabled, updatedAt: now } });
-  if (!category.parentId && !enabled) {
+  if (!category.parentId) {
     await db.collection("categories").where({ familyId: event.familyId, parentId: category._id }).update({ data: { enabled, updatedAt: now } });
   }
   memCacheDel(`categories:${event.familyId}`);
@@ -388,11 +389,15 @@ const renameCategory = async (event) => {
   await requireAdmin(event.familyId);
   const category = (await db.collection("categories").doc(event.categoryId).get()).data;
   const name = String(event.name || "").trim();
+  const icon = event.icon ? String(event.icon).trim().slice(0, 10) : "";
   if (!category || category.familyId !== event.familyId || !name || name.length > 20) throw new Error("分类信息无效");
   const siblings = await db.collection("categories").where({ familyId: event.familyId, type: category.type, parentId: category.parentId || null }).get();
   if (siblings.data.some((item) => item._id !== category._id && normalizeName(item.name) === normalizeName(name))) throw new Error("分类名称已存在");
   const now = new Date();
-  await db.collection("categories").doc(category._id).update({ data: { name, updatedAt: now } });
+  const updateData = { name, updatedAt: now };
+  if (icon) updateData.icon = icon;
+  await db.collection("categories").doc(category._id).update({ data: updateData });
+  const newIcon = icon || category.icon;
   const parentName = category.parentId
     ? (await db.collection("categories").doc(category.parentId).get()).data.name
     : null;
@@ -402,8 +407,8 @@ const renameCategory = async (event) => {
     : bill.type === category.type && bill.category1 === category.name);
   await Promise.all(matchedBills.map((bill) => db.collection("bills").doc(bill._id).update({
     data: category.parentId
-      ? { category2: name, category2Icon: category.icon, updatedAt: now }
-      : { category1: name, category1Icon: category.icon, updatedAt: now }
+      ? { category2: name, category2Icon: newIcon, updatedAt: now }
+      : { category1: name, category1Icon: newIcon, updatedAt: now }
   })));
   memCacheDel(`categories:${event.familyId}`);
   await writeOperationLog(event.familyId, "category.rename", category._id, { from: category.name, name, affectedBills: matchedBills.length });
@@ -527,6 +532,32 @@ const deleteBudget = async (event) => {
   await db.collection("budgets").doc(existing.data[0]._id).remove();
   await writeOperationLog(event.familyId, "budget.delete", month, {});
   return { success: true };
+};
+
+
+const getBudgetPageData = async (event) => {
+  const { familyId, month } = event;
+  await requireMember(familyId);
+  const [year, mon] = String(month || "").split("-").map(Number);
+  if (!year || !mon || mon < 1 || mon > 12) throw new Error("月份无效");
+
+  const prevDate = new Date(Date.UTC(year, mon - 2, 1));
+  const prevMonth = prevDate.getUTCFullYear() + "-" + String(prevDate.getUTCMonth() + 1).padStart(2, "0");
+
+  const [budgetRes, prevBudgetRes, statsResult] = await Promise.all([
+    db.collection("budgets").where({ familyId, month }).limit(1).get(),
+    db.collection("budgets").where({ familyId, month: prevMonth }).limit(1).get(),
+    getStats({ familyId, month })
+  ]);
+
+  const budget = budgetRes.data[0] || null;
+  const prevBudget = prevBudgetRes.data[0] || null;
+  return {
+    success: true,
+    budget,
+    prevBudget,
+    totalExpense: statsResult.totalExpense || 0
+  };
 };
 
 const searchBills = async (event) => {
@@ -782,6 +813,55 @@ const listMembers = async (event) => {
   const payload = members.map((item) => ({ memberId: item._id, nickName: item.nickName, avatarUrl: item.avatarUrl, role: item.role, joinedAt: item.joinedAt }));
   memCacheSet(cacheKey, payload);
   return { success: true, members: payload };
+};
+
+// 批量获取表单选项（分类+账户+成员），一次云函数调用替代多次并发请求，避免触发 429 限流
+const listFormOptions = async (event) => {
+  const { familyId, type } = event;
+  await requireMember(familyId);
+  const categoryCacheKey = `categories:${familyId}:${type || "all"}`;
+  const accountCacheKey = `accounts:${familyId}`;
+  const memberCacheKey = `members:${familyId}`;
+  let categories = memCacheGet(categoryCacheKey);
+  let accounts = memCacheGet(accountCacheKey);
+  let members = memCacheGet(memberCacheKey);
+  const dbTasks = [];
+  if (!categories) {
+    const where = { familyId };
+    if (type) where.type = type;
+    dbTasks.push(
+      db.collection("categories").where(where).orderBy("createTime", "asc").get().then((result) => {
+        const active = result.data.filter((item) => item.enabled !== false);
+        const parents = active.filter((item) => !item.parentId);
+        categories = parents.map((parent) => ({
+          id: parent._id,
+          name: parent.name,
+          icon: parent.icon,
+          type: parent.type,
+          children: active.filter((item) => item.parentId === parent._id).map((item) => ({ id: item._id, name: item.name, icon: item.icon }))
+        })).filter((item) => item.children.length > 0);
+        memCacheSet(categoryCacheKey, categories);
+      })
+    );
+  }
+  if (!accounts) {
+    dbTasks.push(
+      db.collection("accounts").where({ familyId }).orderBy("createTime", "asc").get().then((result) => {
+        accounts = result.data.filter((item) => item.enabled !== false);
+        memCacheSet(accountCacheKey, accounts);
+      })
+    );
+  }
+  if (!members) {
+    dbTasks.push(
+      getFamilyMembers(familyId, "active").then((result) => {
+        members = result.map((item) => ({ memberId: item._id, nickName: item.nickName, avatarUrl: item.avatarUrl, role: item.role, joinedAt: item.joinedAt }));
+        memCacheSet(memberCacheKey, members);
+      })
+    );
+  }
+  if (dbTasks.length) await Promise.all(dbTasks);
+  return { success: true, categories: categories || [], accounts: accounts || [], members: members || [] };
 };
 
 const getBillPreferences = async (event) => {
@@ -1146,16 +1226,34 @@ const getHomeSummary = async (event) => {
     }
   });
 
+  let budgetAmount = 0;
+  let budgetRemainCents = 0;
+  let budgetPercent = 0;
+  try {
+    const budgetRes = await db.collection("budgets").where({ familyId, month }).limit(1).get();
+    if (budgetRes.data[0]) {
+      budgetAmount = budgetRes.data[0].amount || 0;
+      budgetRemainCents = budgetAmount - totalExpenseCents;
+      budgetPercent = budgetAmount > 0 ? Math.round((totalExpenseCents / budgetAmount) * 100) : 0;
+    }
+  } catch (e) { /* budget query failure should not break home summary */ }
+
   return {
     success: true,
     totalExpense: totalExpenseCents / 100,
     totalIncome: totalIncomeCents / 100,
     balance: (totalIncomeCents - totalExpenseCents) / 100,
-    todayExpense: todayExpenseCents / 100
+    todayExpense: todayExpenseCents / 100,
+    budget: budgetAmount > 0 ? {
+      amount: budgetAmount / 100,
+      expense: totalExpenseCents / 100,
+      remain: budgetRemainCents / 100,
+      percent: budgetPercent
+    } : null
   };
 };
 
-const BUILD_VERSION = "2026-08-10-p0-v5";
+const BUILD_VERSION = "2026-08-18-p0-batch-options";
 
 const main = async (event = {}) => {
   await ensureCollections();
@@ -1174,6 +1272,7 @@ const main = async (event = {}) => {
     deleteAccount,
     renameAccount,
     listMembers,
+    listFormOptions,
     getBillPreferences,
     saveBillPreferences,
     createBill,
@@ -1185,6 +1284,7 @@ const main = async (event = {}) => {
     ,getBudget
     ,saveBudget
     ,deleteBudget
+    ,getBudgetPageData
     ,searchBills
     ,previewImport
     ,confirmImport

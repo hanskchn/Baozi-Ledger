@@ -1,20 +1,58 @@
 .page {
-  padding: 24rpx;
+  padding: 0 24rpx calc(160rpx + env(safe-area-inset-bottom));
+  background: #FFF8EC;
+  min-height: 100vh;
 }
 
-.month-bar { display: flex; align-items: center; justify-content: center; padding: 20rpx 0; color: #D96A23; font-size: 36rpx; }
-.month-bar text { padding: 0 44rpx; }.month-text { min-width: 180rpx; text-align: center; color: #5D4037; font-size: 30rpx; font-weight: 600; }
+.month-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32rpx 0 24rpx;
+}
+
+.month-arrow {
+  font-size: 44rpx;
+  color: #D96A23;
+  width: 80rpx;
+  text-align: center;
+  line-height: 1;
+  padding: 8rpx 0;
+}
+
+.month-picker {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 12rpx 32rpx;
+}
+
+.month-text {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #5D4037;
+}
+
+.month-badge {
+  font-size: 20rpx;
+  color: #fff;
+  background: #FF8C42;
+  padding: 2rpx 14rpx;
+  border-radius: 16rpx;
+  line-height: 1.6;
+}
 
 .budget-card {
   background: #fff;
   padding: 40rpx 32rpx;
-  border-radius: 16rpx;
+  border-radius: 20rpx;
   margin-bottom: 16rpx;
+  box-shadow: 0 2rpx 12rpx rgba(93, 64, 55, 0.06);
 }
 
-.budget-label {
-  font-size: 28rpx;
-  color: #999;
+.card-label {
+  font-size: 26rpx;
+  color: #B0A094;
 }
 
 .budget-input-row {
@@ -37,31 +75,76 @@
   color: #5D4037;
 }
 
+.budget-placeholder {
+  color: #D7CCC5;
+  font-weight: 400;
+}
+
+.budget-display {
+  display: flex;
+  align-items: center;
+  margin-top: 16rpx;
+}
+
+.budget-amount-text {
+  font-size: 56rpx;
+  font-weight: 600;
+  color: #5D4037;
+}
+
 .status-card {
   background: #fff;
   padding: 32rpx;
-  border-radius: 16rpx;
-  margin-bottom: 32rpx;
+  border-radius: 20rpx;
+  margin-bottom: 24rpx;
+  box-shadow: 0 2rpx 12rpx rgba(93, 64, 55, 0.06);
 }
 
-.status-row {
+.status-grid {
   display: flex;
-  justify-content: space-between;
-  margin-bottom: 20rpx;
+  align-items: center;
+  margin-bottom: 24rpx;
 }
 
-.status-label {
-  font-size: 28rpx;
-  color: #666;
+.status-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8rpx;
 }
 
-.status-value {
+.status-item-label {
+  font-size: 24rpx;
+  color: #B0A094;
+}
+
+.status-item-value {
   font-size: 32rpx;
   font-weight: 600;
+  color: #5D4037;
 }
 
-.status-value.expense {
-  color: #e54545;
+.status-item-value.expense {
+  color: #E54545;
+}
+
+.status-item-value.remain {
+  color: #4CAF50;
+}
+
+.status-item-value.over {
+  color: #E54545;
+}
+
+.status-item-value.warning {
+  color: #FF6B35;
+}
+
+.status-divider {
+  width: 1rpx;
+  height: 56rpx;
+  background: #F5EFE6;
 }
 
 .progress-bar {
@@ -75,33 +158,102 @@
   height: 100%;
   background: #FF8C42;
   border-radius: 8rpx;
-  transition: width 0.3s;
+  transition: width 0.3s ease;
+}
+
+.progress-fill.warning {
+  background: #FF6B35;
 }
 
 .progress-fill.over {
-  background: #e54545;
+  background: #E54545;
 }
 
 .status-tip {
-  font-size: 26rpx;
-  color: #999;
+  font-size: 24rpx;
+  color: #B0A094;
   margin-top: 16rpx;
 }
 
-.status-tip.warning { color: #D96A23; }
-.status-tip.over { color: #E54545; }
+.status-tip.warning {
+  color: #FF6B35;
+}
+
+.status-tip.over {
+  color: #E54545;
+}
+
+.status-tip.future {
+  color: #4CAF50;
+}
+
+.status-tip.muted {
+  color: #B0A094;
+}
+
+.quick-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 32rpx;
+}
+
+.quick-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  padding: 24rpx 0;
+  background: #fff;
+  border-radius: 16rpx;
+  font-size: 26rpx;
+  color: #5D4037;
+  box-shadow: 0 2rpx 12rpx rgba(93, 64, 55, 0.06);
+}
+
+.quick-btn.copy {
+  color: #D96A23;
+}
+
+.quick-btn.delete {
+  color: #E54545;
+}
+
+.quick-btn.disabled {
+  color: #C9B5A8;
+}
+
+.quick-icon {
+  font-size: 28rpx;
+}
 
 .save-btn {
-  background: #FF8C42;
+  position: fixed;
+  bottom: 40rpx;
+  left: 32rpx;
+  right: 32rpx;
+  height: 96rpx;
+  line-height: 96rpx;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #FF8C42 0%, #FF6B35 100%);
   color: #fff;
-  font-size: 34rpx;
-  border-radius: 44rpx;
-  height: 88rpx;
-  line-height: 88rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+  border-radius: 48rpx;
+  box-shadow: 0 8rpx 24rpx rgba(255, 107, 53, 0.35);
+  text-align: center;
+  margin-bottom: env(safe-area-inset-bottom);
+}
+
+.save-btn.disabled {
+  background: #E0D5CA;
+  box-shadow: none;
+  color: #fff;
 }
 
 .save-btn::after {
   border: none;
 }
-
-.delete-btn { margin-top: 20rpx; background: #FFF0EB; color: #FF6B35; font-size: 28rpx; border-radius: 44rpx; }

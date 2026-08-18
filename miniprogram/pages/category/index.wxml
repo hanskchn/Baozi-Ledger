@@ -1,28 +1,90 @@
 <view class="page">
-  <view class="type-tabs">
-    <view class="type-tab {{type === 'expense' ? 'active' : ''}}" data-type="expense" bindtap="switchType">支出</view>
-    <view class="type-tab {{type === 'income' ? 'active' : ''}}" data-type="income" bindtap="switchType">收入</view>
+  <view class="top-bar">
+    <view class="type-tabs">
+      <view class="type-tab {{type === 'expense' ? 'active' : ''}}" data-type="expense" bindtap="switchType">支出</view>
+      <view class="type-tab {{type === 'income' ? 'active' : ''}}" data-type="income" bindtap="switchType">收入</view>
+    </view>
+    <view class="add-parent-btn" bindtap="openAddCategory1">
+      <text class="add-parent-icon">+</text>
+      <text>新增分类</text>
+    </view>
   </view>
 
-  <view class="category-list">
-    <view class="category-group {{item.enabled === false ? 'is-disabled' : ''}}" wx:for="{{categories}}" wx:key="id">
-      <view class="category1-header">
-        <text class="category1-icon">{{item.icon}}</text>
-        <text class="category1-name">{{item.name}}</text>
-        <text class="category1-edit" data-id="{{item.id}}" bindtap="editCategory">编辑</text>
-        <text class="category-action" data-id="{{item.id}}" data-enabled="{{item.enabled !== false}}" bindtap="toggleCategory">{{item.enabled === false ? '恢复' : '停用'}}</text>
-      </view>
-      <view class="category2-list">
-        <view class="category2-item {{child.enabled === false ? 'is-disabled' : ''}}" wx:for="{{item.children}}" wx:for-item="child" wx:key="id">
-          <text class="category2-icon">{{child.icon}}</text>
-          <text class="category2-name">{{child.name}}</text>
-          <text class="category2-edit" data-id="{{child.id}}" bindtap="editChildCategory">编辑</text>
-          <text class="category2-action" data-id="{{child.id}}" data-enabled="{{child.enabled !== false}}" bindtap="toggleCategory">{{child.enabled === false ? '恢复' : '停用'}}</text>
+  <view class="category-list" wx:if="{{categories.length > 0}}">
+    <view class="category-group {{item.enabled === false ? 'is-disabled' : ''}} {{expandedMap[item.id] ? 'is-expanded' : ''}}" wx:for="{{categories}}" wx:key="id">
+      <view class="category1-header" data-id="{{item.id}}" bindtap="toggleExpand">
+        <view class="category1-left">
+          <view class="category1-avatar">{{item.icon}}</view>
+          <view class="category1-meta">
+            <text class="category1-name">{{item.name}}</text>
+            <text class="category1-count">{{item.children.length}} 个子分类</text>
+          </view>
         </view>
-        <view wx:if="{{item.enabled !== false}}" class="category2-add" data-pid="{{item.id}}" bindtap="addCategory2">+ 添加二级分类</view>
+        <view class="category1-right" catchtap="stopPropagation">
+          <text class="action-btn edit" data-id="{{item.id}}" bindtap="openEditCategory1">编辑</text>
+          <text class="action-btn {{item.enabled === false ? 'restore' : 'disable'}}" data-id="{{item.id}}" data-enabled="{{item.enabled !== false}}" bindtap="toggleCategory">{{item.enabled === false ? '恢复' : '停用'}}</text>
+          <text class="expand-chevron">{{expandedMap[item.id] ? '∧' : '∨'}}</text>
+        </view>
+      </view>
+
+      <view class="category2-list" wx:if="{{expandedMap[item.id]}}">
+        <view class="category2-item {{child.enabled === false ? 'is-disabled' : ''}}" wx:for="{{item.children}}" wx:for-item="child" wx:key="id">
+          <view class="category2-avatar">{{child.icon}}</view>
+          <text class="category2-name">{{child.name}}</text>
+          <view class="category2-actions">
+            <text class="action-btn small edit" data-id="{{child.id}}" bindtap="openEditCategory2">编辑</text>
+            <text class="action-btn small {{child.enabled === false ? 'restore' : 'disable'}}" data-id="{{child.id}}" data-enabled="{{child.enabled !== false}}" bindtap="toggleCategory">{{child.enabled === false ? '恢复' : '停用'}}</text>
+          </view>
+        </view>
+        <view wx:if="{{item.enabled !== false}}" class="category2-add" data-pid="{{item.id}}" bindtap="openAddCategory2">
+          <text class="add-icon">+</text>
+          <text>添加子分类</text>
+        </view>
       </view>
     </view>
   </view>
 
-  <button class="btn-outline" bindtap="addCategory1">+ 添加一级分类</button>
+  <view wx:else class="empty-state">
+    <view class="empty-icon">📂</view>
+    <text class="empty-text">还没有{{type === 'income' ? '收入' : '支出'}}分类</text>
+    <view class="empty-btn" bindtap="openAddCategory1">+ 新建分类</view>
+  </view>
+
+  <!-- 新增/编辑分类弹层 -->
+  <view class="editor-mask" wx:if="{{showEditor}}" bindtap="closeEditor"></view>
+  <view class="editor-sheet" wx:if="{{showEditor}}" catchtap="stopPropagation">
+    <view class="editor-header">
+      <text class="editor-cancel" bindtap="closeEditor">取消</text>
+      <text class="editor-title">{{editorTitle}}</text>
+      <text class="editor-confirm" bindtap="confirmEditor">确定</text>
+    </view>
+    <scroll-view scroll-y class="editor-body">
+      <view class="editor-section">
+        <text class="editor-section-label">名称</text>
+        <input class="editor-input" placeholder="输入分类名称" value="{{editorName}}" bindinput="onEditorNameInput" maxlength="20" focus="{{showEditor && !editorIcon}}" />
+      </view>
+      <view class="editor-section">
+        <text class="editor-section-label">图标</text>
+        <view wx:if="{{editorExtraIcon}}" class="icon-group">
+          <text class="icon-group-title">当前</text>
+          <view class="icon-grid">
+            <view class="icon-cell active" data-icon="{{editorExtraIcon}}" bindtap="selectIcon">{{editorExtraIcon}}</view>
+          </view>
+        </view>
+        <view wx:for="{{iconGroups}}" wx:key="name" wx:for-item="group" class="icon-group">
+          <text class="icon-group-title">{{group.name}}</text>
+          <view class="icon-grid">
+            <view
+              wx:for="{{group.icons}}"
+              wx:key="*this"
+              wx:for-item="icon"
+              class="icon-cell {{editorIcon === icon ? 'active' : ''}}"
+              data-icon="{{icon}}"
+              bindtap="selectIcon"
+            >{{icon}}</view>
+          </view>
+        </view>
+      </view>
+    </scroll-view>
+  </view>
 </view>

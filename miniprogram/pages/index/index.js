@@ -11,6 +11,7 @@ Page({
     monthExpense: 0,
     monthIncome: 0,
     monthBalance: 0,
+    budget: null,
     recentBills: [],
     loading: true,
     errorMessage: "",
@@ -81,6 +82,7 @@ Page({
       monthExpense: cached.summary.monthExpense || "0.00",
       monthIncome: cached.summary.monthIncome || "0.00",
       monthBalance: cached.summary.monthBalance || "0.00",
+      budget: cached.summary.budget || null,
       recentBills: bills,
       groupedBills: this._groupRecentBills(bills),
       hasCache: true,
@@ -138,20 +140,21 @@ Page({
       const cached = wx.getStorageSync("formOptions:" + familyId);
       if (cached && cached.ts && Date.now() - cached.ts < 5 * 60 * 1000) return;
     } catch (e) {}
-    const [catExpense, catIncome, accounts, members] = await Promise.all([
-      wx.cloud.callFunction({ name: "accountingFunctions", data: { action: "listCategories", familyId, type: "expense" } }),
-      wx.cloud.callFunction({ name: "accountingFunctions", data: { action: "listCategories", familyId, type: "income" } }),
-      wx.cloud.callFunction({ name: "accountingFunctions", data: { action: "listAccounts", familyId } }),
-      wx.cloud.callFunction({ name: "accountingFunctions", data: { action: "listMembers", familyId } })
-    ]).catch(() => [null, null, null, null]);
-    if (!catExpense || !catIncome || !accounts || !members) return;
+    const resp = await wx.cloud.callFunction({
+      name: "accountingFunctions",
+      data: { action: "listFormOptions", familyId }
+    }).catch(() => null);
+    if (!resp || !resp.result) return;
+    const allCategories = resp.result.categories || [];
+    const catExpense = allCategories.filter((c) => c.type !== "income");
+    const catIncome = allCategories.filter((c) => c.type === "income");
     try {
       wx.setStorageSync("formOptions:" + familyId, {
         ts: Date.now(),
-        categories: catExpense.result?.categories || [],
-        incomeCategories: catIncome.result?.categories || [],
-        accounts: accounts.result?.accounts || [],
-        members: members.result?.members || [],
+        categories: catExpense,
+        incomeCategories: catIncome,
+        accounts: resp.result.accounts || [],
+        members: resp.result.members || [],
         preferences: null
       });
     } catch (e) {}
@@ -231,6 +234,7 @@ Page({
         monthExpense,
         monthIncome,
         monthBalance,
+        budget: summary.budget || null,
         recentBills,
         groupedBills,
         hasCache: true
@@ -253,6 +257,7 @@ Page({
           isOwner: this.data.isOwner,
           familyAdminName: this.data.familyAdminName,
           summary: { todayExpense, monthExpense, monthIncome, monthBalance },
+          budget: summary.budget || null,
           recentBills,
           groupedBills
         });
@@ -329,6 +334,10 @@ Page({
 
   goBills() {
     wx.switchTab({ url: "/pages/bills/index" });
+  },
+
+  goBudget() {
+    wx.navigateTo({ url: "/pages/budget/index" });
   },
 
   _groupRecentBills(bills) {

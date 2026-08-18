@@ -119,17 +119,16 @@ Page({
     const familyId = app.globalData.currentFamilyId;
     if (!familyId) return;
     try {
-      const [catRes, memRes, accRes] = await Promise.all([
-        wx.cloud.callFunction({ name: 'accountingFunctions', data: { action: 'listCategories', familyId } }),
-        wx.cloud.callFunction({ name: 'accountingFunctions', data: { action: 'listMembers', familyId } }),
-        wx.cloud.callFunction({ name: 'accountingFunctions', data: { action: 'listAccounts', familyId } })
-      ]);
-      const categories = catRes.result?.categories || [];
-      const members = memRes.result?.members || [];
-      const accounts = accRes.result?.accounts || [];
-      const accountOptions = ['全部'].concat(accounts.map((item) => item.name));
-      const memberOptions = ['全部'].concat(members.map((item) => item.nickName || '微信用户'));
-      const memberValues = [''].concat(members.map((item) => item.memberId));
+      const res = await wx.cloud.callFunction({
+        name: 'accountingFunctions',
+        data: { action: 'listFormOptions', familyId }
+      });
+      const categories = res.result?.categories || [];
+      const members = res.result?.members || [];
+      const accounts = res.result?.accounts || [];
+      const accountOptions = ["全部"].concat(accounts.map((item) => item.name));
+      const memberOptions = ["全部"].concat(members.map((item) => item.nickName || "微信用户"));
+      const memberValues = [""].concat(members.map((item) => item.memberId));
       const patch = {
         categories, members, accounts,
         accountOptions, memberOptions, memberValues
@@ -383,17 +382,7 @@ Page({
   },
 
   // ========== 商家 ==========
-  editMerchant() {
-    wx.showModal({
-      title: '商家',
-      editable: true,
-      placeholderText: '输入商家名称关键词',
-      content: this.data.merchant,
-      success: (res) => {
-        if (res.confirm) this.setData({ merchant: (res.content || '').trim() });
-      }
-    });
-  },
+  onMerchantInput(e) { this.setData({ merchant: (e.detail.value || '').trim() }); },
 
   // ========== 金额 ==========
   onMinAmountInput(e) { this.setData({ minAmount: e.detail.value }); },
@@ -411,17 +400,7 @@ Page({
   },
 
   // ========== 备注 ==========
-  editRemark() {
-    wx.showModal({
-      title: '备注关键词',
-      editable: true,
-      placeholderText: '输入备注关键词',
-      content: this.data.remark,
-      success: (res) => {
-        if (res.confirm) this.setData({ remark: (res.content || '').trim().slice(0, 50) });
-      }
-    });
-  },
+  onRemarkInput(e) { this.setData({ remark: (e.detail.value || '').slice(0, 50) }); },
 
   // ========== 重置 ==========
   onReset() {

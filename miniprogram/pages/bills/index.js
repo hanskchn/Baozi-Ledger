@@ -149,15 +149,14 @@ Page({
     try {
       const familyId = app.globalData.currentFamilyId;
       if (!familyId) return;
-      const [catRes, memRes, accRes] = await Promise.all([
-        wx.cloud.callFunction({ name: "accountingFunctions", data: { action: "listCategories", familyId } }),
-        wx.cloud.callFunction({ name: "accountingFunctions", data: { action: "listMembers", familyId } }),
-        wx.cloud.callFunction({ name: "accountingFunctions", data: { action: "listAccounts", familyId } })
-      ]);
+      const res = await wx.cloud.callFunction({
+        name: "accountingFunctions",
+        data: { action: "listFormOptions", familyId }
+      });
       this.setData({
-        categories: catRes.result.categories || [],
-        members: memRes.result.members || [],
-        accounts: accRes.result.accounts || []
+        categories: res.result?.categories || [],
+        members: res.result?.members || [],
+        accounts: res.result?.accounts || []
       });
     } catch (error) {
       console.error("加载选项失败", error);

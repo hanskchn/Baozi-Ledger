@@ -57,13 +57,12 @@
     </picker>
 
     <!-- 商家 -->
-    <view class="filter-row" bindtap="editMerchant">
+    <view class="filter-row text-row">
       <view class="filter-row-left">
         <text class="filter-icon">🏪</text>
         <text class="filter-label">商家</text>
       </view>
-      <text class="filter-value {{merchant ? 'active' : ''}}">{{merchant || '全部'}}</text>
-      <text class="filter-arrow">›</text>
+      <input class="text-input" placeholder="输入商家名称关键词" placeholder-class="text-input-placeholder" value="{{merchant}}" bindinput="onMerchantInput" confirm-type="search" />
     </view>
 
     <!-- 金额 -->
@@ -78,13 +77,12 @@
     </view>
 
     <!-- 备注 -->
-    <view class="filter-row" bindtap="editRemark">
+    <view class="filter-row text-row">
       <view class="filter-row-left">
         <text class="filter-icon">📝</text>
         <text class="filter-label">备注</text>
       </view>
-      <text class="filter-value {{remark ? 'active' : ''}}">{{remark || '填写备注关键词'}}</text>
-      <text class="filter-arrow">›</text>
+      <input class="text-input" placeholder="输入备注关键词" placeholder-class="text-input-placeholder" value="{{remark}}" bindinput="onRemarkInput" confirm-type="search" maxlength="50" />
     </view>
   </view>
 
@@ -138,7 +136,7 @@
       <text class="time-sheet-title">选择时间</text>
       <text class="time-sheet-close" bindtap="closeTimeSheet">✕</text>
     </view>
-    <view class="time-sheet-body">
+    <scroll-view scroll-y class="time-sheet-body">
       <view class="quick-grid">
         <view class="quick-chip {{quick === 'thisMonth' ? 'active' : ''}}" data-key="thisMonth" bindtap="selectQuick">本月</view>
         <view class="quick-chip {{quick === 'lastMonth' ? 'active' : ''}}" data-key="lastMonth" bindtap="selectQuick">上月</view>
@@ -169,7 +167,7 @@
           </picker>
         </view>
       </view>
-    </view>
+    </scroll-view>
     <view class="time-sheet-footer">
       <view class="time-btn-cancel" bindtap="closeTimeSheet">取消</view>
       <view class="time-btn-confirm" bindtap="confirmTimeSheet">确定</view>

@@ -260,6 +260,100 @@
   color: #4CAF50;
 }
 
+
+/* 预算卡片 */
+.budget-card {
+  margin: 20rpx 24rpx 0;
+  padding: 20rpx 24rpx;
+  background: #fff;
+  border-radius: 16rpx;
+  box-shadow: 0 2rpx 12rpx rgba(93, 64, 55, 0.06);
+}
+
+.budget-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12rpx;
+}
+
+.budget-card-label {
+  font-size: 24rpx;
+  color: #B0A094;
+}
+
+.budget-card-arrow {
+  font-size: 28rpx;
+  color: #C9B5A8;
+}
+
+.budget-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12rpx;
+}
+
+.budget-amount {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #5D4037;
+}
+
+.budget-expense {
+  font-size: 24rpx;
+  color: #E54545;
+}
+
+.budget-remain {
+  font-size: 24rpx;
+  color: #4CAF50;
+}
+
+.budget-remain.over {
+  color: #E54545;
+}
+
+.budget-progress {
+  position: relative;
+  height: 10rpx;
+  background: #F5EBDD;
+  border-radius: 5rpx;
+  overflow: hidden;
+}
+
+.budget-progress-fill {
+  height: 100%;
+  background: #FF8C42;
+  border-radius: 5rpx;
+  transition: width 0.3s ease;
+}
+
+.budget-progress-fill.warning {
+  background: #FF6B35;
+}
+
+.budget-progress-fill.over {
+  background: #E54545;
+}
+
+.budget-percent {
+  display: block;
+  font-size: 22rpx;
+  color: #B0A094;
+  margin-top: 8rpx;
+  text-align: right;
+}
+
+.budget-card-empty {
+  padding: 16rpx 0 8rpx;
+}
+
+.budget-empty-text {
+  font-size: 26rpx;
+  color: #FF8C42;
+  font-weight: 500;
+}
 .fab { position: fixed; right: 40rpx; bottom: 150rpx; width: 112rpx; height: 112rpx; line-height: 108rpx; text-align: center; border-radius: 50%; background: #FF8C42; color: #FFF; font-size: 56rpx; box-shadow: 0 8rpx 28rpx rgba(255, 140, 66, .35); z-index: 10; }
 .sheet-mask { position: fixed; inset: 0; background: rgba(0, 0, 0, .25); z-index: 20; }
 .family-sheet { position: fixed; left: 0; right: 0; bottom: 0; padding: 28rpx 32rpx calc(28rpx + env(safe-area-inset-bottom)); background: #FFFFFF; border-radius: 28rpx 28rpx 0 0; z-index: 21; }

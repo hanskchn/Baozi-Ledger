@@ -138,23 +138,19 @@ Page({
 
     // 后台静默刷新
     try {
-      const [categoryResult, accountResult, memberResult] = await Promise.all([
-        this.callFunction("listCategories", { familyId, type }),
-        this.callFunction("listAccounts", { familyId }),
-        this.callFunction("listMembers", { familyId })
-      ]);
+      const optionsResult = await this.callFunction("listFormOptions", { familyId, type });
       let preferenceResult = { preferences: null };
       try {
         preferenceResult = await this.callFunction("getBillPreferences", { familyId });
       } catch (error) {
         console.warn("加载记账偏好失败，已使用默认值", error);
       }
-      const categories = this.normalizeCategories(categoryResult.categories || []);
-      const accounts = accountResult.accounts || [];
-      const members = this.decorateMembers(memberResult.members || []);
+      const categories = this.normalizeCategories(optionsResult.categories || []);
+      const accounts = optionsResult.accounts || [];
+      const members = this.decorateMembers(optionsResult.members || []);
       const preferences = preferenceResult.preferences || null;
       this.setData({ categories, accounts, members, preferences });
-      this.writeOptionsCache(familyId, type, { categories: categoryResult.categories || [], accounts, members, preferences });
+      this.writeOptionsCache(familyId, type, { categories: optionsResult.categories || [], accounts, members, preferences });
       if (!this.data.editMode) this.applyDefaults();
     } catch (error) {
       if (!cached) throw error;
@@ -211,13 +207,15 @@ Page({
   },
 
   normalizeCategories(categories) {
-    if (!categories.length || categories.some((item) => Array.isArray(item.children))) return categories;
-    const parents = categories.filter((item) => !item.parentId);
+    // 防御性过滤：云函数 listCategories 只返回启用项，但本地缓存可能残留已停用分类
+    const active = (categories || []).filter((item) => item.enabled !== false);
+    if (!active.length || active.some((item) => Array.isArray(item.children))) return active;
+    const parents = active.filter((item) => !item.parentId);
     return parents.map((parent) => ({
       id: parent._id || parent.id,
       name: parent.name,
       icon: parent.icon,
-      children: categories
+      children: active
         .filter((item) => item.parentId === (parent._id || parent.id))
         .map((item) => ({ id: item._id || item.id, name: item.name, icon: item.icon }))
     })).filter((item) => item.children.length > 0);
@@ -318,7 +316,8 @@ Page({
     const selected = this.data.category1
       ? this.data.categories.find((item) => item.name === this.data.category1)
       : this.data.categories[0];
-    const recent = this.loadRecentCategories();
+    const recent = this.filterRecentCategories(this.loadRecentCategories());
+    this.persistRecentCategories(recent);
     this.setData({
       showCategoryPicker: true,
       selectedCategory1: selected ? selected.name : "",
@@ -335,6 +334,26 @@ Page({
     } catch (e) { return []; }
   },
 
+  // 过滤掉已停用/已删除的分类（仅保留仍在当前分类树中的二级分类）
+  filterRecentCategories(list) {
+    if (!Array.isArray(list) || !list.length) return [];
+    const validNames = new Set();
+    (this.data.categories || []).forEach((parent) => {
+      (parent.children || []).forEach((child) => validNames.add(child.name));
+    });
+    const seen = new Set();
+    return list.filter((item) => {
+      if (!item || !item.name || !validNames.has(item.name) || seen.has(item.name)) return false;
+      seen.add(item.name);
+      return true;
+    });
+  },
+
+  persistRecentCategories(list) {
+    const key = "recentCategories:" + this.data.familyId + ":" + this.data.type;
+    try { wx.setStorageSync(key, Array.isArray(list) ? list : []); } catch (e) {}
+  },
+
   saveRecentCategory(category2, category2Icon, category1, category1Icon) {
     const key = "recentCategories:" + this.data.familyId + ":" + this.data.type;
     let list = [];
@@ -349,9 +368,19 @@ Page({
   selectRecentCategory(event) {
     const item = event.currentTarget.dataset.item;
     if (!item) return;
+    const parent = (this.data.categories || []).find((p) =>
+      (p.children || []).some((c) => c.name === item.name)
+    );
+    if (!parent) {
+      wx.showToast({ title: "该分类已停用", icon: "none" });
+      const recent = this.filterRecentCategories(this.loadRecentCategories());
+      this.persistRecentCategories(recent);
+      this.setData({ recentCategories: recent });
+      return;
+    }
     this.setData({
-      category1: item.category1 || this.data.category1,
-      category1Icon: item.category1Icon || this.data.category1Icon,
+      category1: parent.name,
+      category1Icon: parent.icon,
       category2: item.name,
       category2Icon: item.icon,
       showCategoryPicker: false

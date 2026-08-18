@@ -87,6 +87,26 @@
   color: #bbb;
 }
 
+.text-row .filter-row-left {
+  margin-right: 24rpx;
+}
+
+.text-input {
+  flex: 1;
+  height: 64rpx;
+  background: #F5F0EB;
+  border-radius: 32rpx;
+  padding: 0 28rpx;
+  font-size: 28rpx;
+  color: #5D4037;
+  text-align: right;
+}
+
+.text-input-placeholder {
+  color: #bbb;
+  font-size: 26rpx;
+}
+
 .amount-sep {
   font-size: 28rpx;
   color: #999;
@@ -140,6 +160,9 @@
   border-radius: 24rpx 24rpx 0 0;
   z-index: 201;
   padding-bottom: env(safe-area-inset-bottom);
+  height: 80vh;
+  display: flex;
+  flex-direction: column;
 }
 .time-sheet-header,
 .cat-sheet-header {
@@ -155,7 +178,9 @@
 
 /* 分类弹层 */
 .cat-sheet-body {
-  max-height: 70vh;
+  flex: 1;
+  min-height: 0;
+  height: 0;
   padding: 0 32rpx;
 }
 .cat-all {
@@ -229,7 +254,7 @@
 }
 
 /* 时间选择弹层 */
-.time-sheet-body { padding: 0 32rpx; }
+.time-sheet-body { flex: 1; min-height: 0; height: 0; padding: 0 32rpx; }
 
 .quick-grid {
   display: flex;

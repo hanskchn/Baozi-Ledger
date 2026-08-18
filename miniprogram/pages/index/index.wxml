@@ -44,6 +44,30 @@
     </view>
   </view>
 
+  <!-- 预算卡片 -->
+  <view class="budget-card" bindtap="goBudget">
+    <view class="budget-card-header">
+      <text class="budget-card-label">本月预算</text>
+      <text class="budget-card-arrow">›</text>
+    </view>
+    <block wx:if="{{budget}}">
+      <view class="budget-card-row">
+        <text class="budget-amount">¥{{budget.amount}}</text>
+        <text class="budget-expense">已支出 ¥{{budget.expense}}</text>
+        <text class="budget-remain {{budget.percent >= 100 ? 'over' : ''}}">{{budget.percent >= 100 ? '已超支' : '剩余'}} ¥{{budget.remain}}</text>
+      </view>
+      <view class="budget-progress">
+        <view class="budget-progress-fill {{budget.percent >= 100 ? 'over' : (budget.percent >= 80 ? 'warning' : '')}}" style="width: {{budget.percent > 100 ? 100 : budget.percent}}%"></view>
+      </view>
+      <text class="budget-percent">{{budget.percent}}%</text>
+    </block>
+    <block wx:else>
+      <view class="budget-card-empty">
+        <text class="budget-empty-text">设置本月预算 ›</text>
+      </view>
+    </block>
+  </view>
+
   <!-- 记一笔按钮 -->
   <view class="fab" bindtap="openAddBill">+</view>
 
