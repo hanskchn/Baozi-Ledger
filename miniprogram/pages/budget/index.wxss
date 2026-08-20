@@ -248,11 +248,7 @@
   margin-bottom: env(safe-area-inset-bottom);
 }
 
-.save-btn.disabled {
-  background: #E0D5CA;
-  box-shadow: none;
-  color: #fff;
-}
+
 
 .save-btn::after {
   border: none;

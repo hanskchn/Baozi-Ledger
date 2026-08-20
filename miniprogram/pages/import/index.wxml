@@ -4,6 +4,8 @@
     <text class="tip-desc">文件需包含「支出」和「收入」两个 Sheet，系统会自动映射分类、账户等字段。</text>
   </view>
 
+  <button class="btn-outline" bindtap="downloadTemplate" loading="{{downloadingTemplate}}">📥 下载导入模板</button>
+
   <view class="empty-state" wx:if="{{!fileName && previewData.length === 0}}"><image wx:if="{{hasBrandAssets && !emptyImageFailed}}" class="empty-illustration" src="/images/brand/import-empty.png" mode="aspectFit" binderror="onEmptyImageError"></image><view wx:else class="empty-mark">📄</view></view>
   <button class="btn-outline" bindtap="chooseFile" loading="{{previewing}}">选择 xlsx 文件</button>
 
@@ -24,6 +26,21 @@
   <view class="mapping-section" wx:if="{{memberMappings.length > 0}}">
     <view class="preview-title">成员归属映射</view>
     <view class="mapping-item" wx:for="{{memberMappings}}" wx:key="sourceName"><text>{{item.sourceName}}</text><text class="mapping-arrow">→</text><text>{{item.targetName}}</text><text class="mapping-note">{{item.matched ? '已匹配' : (item.ambiguous ? '昵称重复，归入管理员' : '未匹配，归入管理员')}}</text></view>
+  </view>
+
+  <view class="summary-section" wx:if="{{previewData.length > 0 || invalidList.length > 0}}">
+    <view class="preview-title">📊 文件解析汇总</view>
+    <view class="summary-row"><text>总行数</text><text class="summary-num">{{total}}</text></view>
+    <view class="summary-row"><text>有效行</text><text class="summary-num valid">{{validCount}}</text></view>
+    <view wx:if="{{invalidList.length > 0}}" class="summary-row"><text>无效行</text><text class="summary-num invalid">{{invalidList.length}}</text></view>
+  </view>
+
+  <view class="invalid-section" wx:if="{{invalidList.length > 0}}">
+    <view class="preview-title">⚠️ 无效行明细（不会导入）</view>
+    <view class="invalid-item" wx:for="{{invalidList}}" wx:key="rowNumber">
+      <text class="invalid-row">第 {{item.rowNumber}} 行</text>
+      <text class="invalid-reason">{{item.reason}}</text>
+    </view>
   </view>
 
   <button class="save-btn" wx:if="{{previewData.length > 0}}" bindtap="confirmImport" loading="{{importing}}">确认导入</button>

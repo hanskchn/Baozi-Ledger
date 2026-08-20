@@ -18,7 +18,11 @@
   <!-- 顶部账本切换 -->
   <view class="family-bar">
     <view class="family-title">
-      <text class="family-name">{{familyName}}</text>
+      <view wx:if="{{isOwner}}" class="family-name-tap" bindtap="editFamilyName" hover-class="family-name-tap-hover" hover-stay-time="80">
+        <text class="family-name">{{familyName}}</text>
+        <image class="family-edit" src="/images/icons/edit.png" mode="aspectFit"></image>
+      </view>
+      <text wx:else class="family-name">{{familyName}}</text>
       <text class="family-role {{isOwner ? 'owner' : 'member'}}">{{isOwner ? '我的' : familyAdminName ? (familyAdminName + '的') : '成员'}}</text>
     </view>
     <view class="family-switch" bindtap="openFamilyPicker">切换⌄</view>
@@ -44,28 +48,23 @@
     </view>
   </view>
 
-  <!-- 预算卡片 -->
-  <view class="budget-card" bindtap="goBudget">
+  <!-- 预算卡片（未设置预算时不显示） -->
+  <view class="budget-card" wx:if="{{budget}}" bindtap="goBudget">
     <view class="budget-card-header">
       <text class="budget-card-label">本月预算</text>
       <text class="budget-card-arrow">›</text>
     </view>
-    <block wx:if="{{budget}}">
-      <view class="budget-card-row">
-        <text class="budget-amount">¥{{budget.amount}}</text>
-        <text class="budget-expense">已支出 ¥{{budget.expense}}</text>
-        <text class="budget-remain {{budget.percent >= 100 ? 'over' : ''}}">{{budget.percent >= 100 ? '已超支' : '剩余'}} ¥{{budget.remain}}</text>
-      </view>
-      <view class="budget-progress">
-        <view class="budget-progress-fill {{budget.percent >= 100 ? 'over' : (budget.percent >= 80 ? 'warning' : '')}}" style="width: {{budget.percent > 100 ? 100 : budget.percent}}%"></view>
-      </view>
-      <text class="budget-percent">{{budget.percent}}%</text>
-    </block>
-    <block wx:else>
-      <view class="budget-card-empty">
-        <text class="budget-empty-text">设置本月预算 ›</text>
-      </view>
-    </block>
+    <view class="budget-card-row">
+      <text class="budget-amount">¥{{budget.amount}}</text>
+      <text class="budget-status {{budget.isOver ? 'over' : (budget.isWarning ? 'warning' : 'ok')}}">{{budget.isOver ? '已超支' : '剩余'}} ¥{{budget.remain}}</text>
+    </view>
+    <view class="budget-progress">
+      <view class="budget-progress-fill {{budget.isOver ? 'over' : (budget.isWarning ? 'warning' : '')}}" style="width: {{budget.barWidth}}%"></view>
+    </view>
+    <view class="budget-footer">
+      <text class="budget-expense">已支出 ¥{{budget.expense}}</text>
+      <text class="budget-percent {{budget.isOver ? 'over' : (budget.isWarning ? 'warning' : '')}}">{{budget.displayPercent}}</text>
+    </view>
   </view>
 
   <!-- 记一笔按钮 -->
@@ -73,7 +72,7 @@
 
   <!-- 最近账单 -->
   <view class="section">
-    <view class="section-head"><text class="section-title">最近账单</text><text class="view-all" bindtap="goBills">查看全部 ›</text></view>
+    <view class="section-head"><text class="section-title">最近流水</text><text class="view-all" bindtap="goBills">查看全部 ›</text></view>
     <view class="bill-list">
       <view class="empty-tip" wx:if="{{recentBills.length === 0}}"><image wx:if="{{hasBrandAssets && !emptyImageFailed}}" class="empty-illustration" src="/images/brand/empty-bills.png" mode="aspectFit" binderror="onEmptyImageError"></image><view wx:else class="empty-mark">包</view><text>还没有账单，记一笔吧~</text></view>
       <block wx:if="{{recentBills.length > 0}}" wx:for="{{groupedBills}}" wx:key="key" wx:for-item="group">

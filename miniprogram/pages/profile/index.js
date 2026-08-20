@@ -129,13 +129,8 @@ Page({
     }
   },
 
-  async goExport() {
+  goExport() {
     if (!app.globalData.currentFamilyId) { wx.showToast({ title: "请先确认加入账本", icon: "none" }); return; }
-    try {
-      const result = await wx.cloud.callFunction({ name: "accountingFunctions", data: { action: "exportBills", familyId: app.globalData.currentFamilyId } });
-      if (!result.result?.success || !result.result.tempFileURL) throw new Error(result.result?.message || "导出失败");
-      const downloaded = await wx.downloadFile({ url: result.result.tempFileURL });
-      await wx.openDocument({ filePath: downloaded.tempFilePath, showMenu: true });
-    } catch (error) { wx.showToast({ title: error.message || "导出失败", icon: "none" }); }
+    wx.navigateTo({ url: "/pages/export/index" });
   }
 });

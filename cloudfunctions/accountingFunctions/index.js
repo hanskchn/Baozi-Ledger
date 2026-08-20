@@ -306,7 +306,8 @@ const listCategories = async (event) => {
   if (cached) return { success: true, categories: cached, cached: true };
   const where = { familyId };
   if (type) where.type = type;
-  const result = await db.collection("categories").where(where).orderBy("createTime", "asc").get();
+  // 云数据库 .get() 默认最多返回 100 条；分类（尤其导入随手记后）可能超过 100，必须显式放大上限
+  const result = await db.collection("categories").where(where).orderBy("createTime", "asc").limit(1000).get();
   const active = result.data.filter((item) => item.enabled !== false);
   const parents = active.filter((item) => !item.parentId);
   const categories = parents.map((parent) => ({
@@ -326,7 +327,7 @@ const listAccounts = async (event) => {
   const cacheKey = `accounts:${familyId}`;
   const cached = memCacheGet(cacheKey);
   if (cached) return { success: true, accounts: cached, cached: true };
-  const result = await db.collection("accounts").where({ familyId }).orderBy("createTime", "asc").get();
+  const result = await db.collection("accounts").where({ familyId }).orderBy("createTime", "asc").limit(200).get();
   const accounts = result.data.filter((item) => item.enabled !== false);
   memCacheSet(cacheKey, accounts);
   return { success: true, accounts };
@@ -334,13 +335,13 @@ const listAccounts = async (event) => {
 
 const listAllAccounts = async (event) => {
   await requireAdmin(event.familyId);
-  const result = await db.collection("accounts").where({ familyId: event.familyId }).orderBy("createTime", "asc").get();
+  const result = await db.collection("accounts").where({ familyId: event.familyId }).orderBy("createTime", "asc").limit(200).get();
   return { success: true, accounts: result.data };
 };
 
 const listAllCategories = async (event) => {
   await requireAdmin(event.familyId);
-  const result = await db.collection("categories").where({ familyId: event.familyId, type: event.type }).orderBy("createTime", "asc").get();
+  const result = await db.collection("categories").where({ familyId: event.familyId, type: event.type }).orderBy("createTime", "asc").limit(1000).get();
   return { success: true, categories: result.data };
 };
 
@@ -629,17 +630,34 @@ const resolveImportedMember = (members, sourceName, fallbackMember) => {
   return { member: matches[0], matched: true, ambiguous: false };
 };
 
+const getImportTemplate = async (event = {}) => {
+  const wb = XLSX.utils.book_new();
+  const headers = ["日期", "交易类型", "一级分类", "二级分类", "支出账户/收入账户", "金额", "成员", "商家", "项目分类", "项目", "备注"];
+  const expenseRow = ["2026-08-18 12:00", "支出", "餐饮", "午餐", "现金", "20.00", "管理员", "公司食堂", "", "", "工作日午餐"];
+  const incomeRow = ["2026-08-18 18:00", "收入", "工资", "底薪", "招商银行卡", "5000.00", "管理员", "", "", "", "月度工资"];
+  const expenseSheet = XLSX.utils.aoa_to_sheet([headers, expenseRow]);
+  const incomeSheet = XLSX.utils.aoa_to_sheet([headers, incomeRow]);
+  XLSX.utils.book_append_sheet(wb, expenseSheet, "支出");
+  XLSX.utils.book_append_sheet(wb, incomeSheet, "收入");
+  const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+  const upload = await cloud.uploadFile({ cloudPath: "templates/import_template.xlsx", fileContent: buffer });
+  return { success: true, fileID: upload.fileID };
+};
+
 const previewImport = async (event) => {
   const operator = await requireAdmin(event.familyId);
   const rows = await loadImportRows(event.fileID);
-  const invalid = rows.find((row) => !/^(?:0|[1-9]\d{0,6})(?:\.\d{1,2})?$/.test(row.amount) || Number(row.amount) <= 0 || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(row.date));
-  if (invalid) throw new Error("第 " + invalid.rowNumber + " 行日期或金额无效");
+  const invalid = [];
+  for (const row of rows) {
+    const reason = validateRowForImport(row);
+    if (reason) invalid.push({ rowNumber: row.rowNumber, reason });
+  }
   const members = await getFamilyMembers(event.familyId, "active");
   const memberMappings = [...new Set(rows.map((row) => row.memberName).filter(Boolean))].map((sourceName) => {
     const resolved = resolveImportedMember(members, sourceName, operator);
     return { sourceName, targetName: resolved.member.nickName, matched: resolved.matched, ambiguous: resolved.ambiguous };
   });
-  return { success: true, total: rows.length, rows: rows.slice(0, 30), memberMappings };
+  return { success: true, total: rows.length, valid: rows.length - invalid.length, rows: rows.slice(0, 30), memberMappings, invalid };
 };
 
 const confirmImport = async (event) => {
@@ -647,55 +665,160 @@ const confirmImport = async (event) => {
   const rows = await loadImportRows(event.fileID);
   if (!rows.length) throw new Error("导入文件没有可处理的账单");
   if (rows.length > 2000) throw new Error("单次最多导入 2000 条账单");
-  const invalid = rows.find((row) => {
-    try {
-      parseAmountCents(row.amount);
-      validateDateTime(row.date);
-      return !row.category1 || !row.category2 || !row.account
-        || row.category1.length > 20 || row.category2.length > 20 || row.account.length > 20
-        || row.merchant.length > 50 || row.remark.length > 200;
-    } catch (error) {
-      return true;
-    }
-  });
-  if (invalid) throw new Error("第 " + invalid.rowNumber + " 行字段、日期或金额无效");
+  const invalid = [];
+  for (const row of rows) {
+    const reason = validateRowForImport(row);
+    if (reason) invalid.push({ rowNumber: row.rowNumber, reason });
+  }
+  if (invalid.length === rows.length) throw new Error("全部 " + rows.length + " 行均无效，请检查文件格式");
   const batchId = "import_" + Date.now();
   const members = await getFamilyMembers(event.familyId, "active");
-  let imported = 0;
-  try {
-    for (const row of rows) {
-      if (!/^(?:0|[1-9]\d{0,6})(?:\.\d{1,2})?$/.test(row.amount) || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(row.date)) continue;
-      const fingerprint = crypto.createHash("sha256").update(JSON.stringify([row.type, row.date, row.amount, row.category1, row.category2, row.account, row.memberName, row.merchant, row.remark])).digest("hex");
-      const legacyFingerprint = [row.type, row.date, row.amount, row.category1, row.category2, row.remark].join("|");
-      const duplicate = await db.collection("bills").where({ familyId: event.familyId, importFingerprint: db.command.in([fingerprint, legacyFingerprint]), deleted: false }).limit(1).get();
-      if (duplicate.data.length) continue;
-      let parent = (await db.collection("categories").where({ familyId: event.familyId, type: row.type, name: row.category1, parentId: null }).limit(1).get()).data[0];
-      if (!parent) {
-        const created = await db.collection("categories").add({ data: { familyId: event.familyId, type: row.type, name: row.category1, icon: "❓", parentId: null, enabled: true, createdByImportBatchId: batchId, createTime: new Date(), updatedAt: new Date() } });
-        parent = { _id: created._id, icon: "❓" };
-      }
-      const childResult = await db.collection("categories").where({ familyId: event.familyId, type: row.type, name: row.category2, parentId: parent._id }).limit(1).get();
-      let child = childResult.data[0];
-      if (!child) {
-        const created = await db.collection("categories").add({ data: { familyId: event.familyId, type: row.type, name: row.category2, icon: "❓", parentId: parent._id, enabled: true, createdByImportBatchId: batchId, createTime: new Date(), updatedAt: new Date() } });
-        child = { _id: created._id, icon: "❓" };
-      }
-      const account = await db.collection("accounts").where({ familyId: event.familyId, name: row.account || "现金" }).limit(1).get();
-      if (!account.data[0]) await db.collection("accounts").add({ data: { familyId: event.familyId, name: row.account || "现金", enabled: true, createdByImportBatchId: batchId, createTime: new Date(), updatedAt: new Date() } });
-      const member = resolveImportedMember(members, row.memberName, operator).member;
-      await db.collection("bills").add({ data: { familyId: event.familyId, type: row.type, amount: parseAmountCents(row.amount), category1: row.category1, category1Icon: parent.icon || "❓", category2: row.category2, category2Icon: child.icon || "❓", account: row.account || "现金", memberOpenid: member.openid, memberId: member._id, member: member.nickName, creatorOpenId: operator.openid, date: validateDateTime(row.date), merchant: normalizeText(row.merchant, 50), remark: normalizeText(row.remark, 200), deleted: false, version: 1, importBatchId: batchId, importFingerprint: fingerprint, createdAt: new Date(), updatedAt: new Date() } });
-      imported += 1;
-    }
-  } catch (error) {
-    // 保留 batchId，使中途失败后前端仍可对该批次发起回滚，避免半导入账单无法撤销。
-    error.batchId = batchId;
-    error.imported = imported;
-    throw error;
+  const amountRe = /^(?:0|[1-9]\d{0,6})(?:\.\d{1,2})?$/;
+  const dateRe = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/;
+  const invalidRowNumbers = new Set(invalid.map((item) => item.rowNumber));
+  const validRows = rows.filter((row) => !invalidRowNumbers.has(row.rowNumber) && amountRe.test(row.amount || "") && dateRe.test(row.date || ""));
+  if (!validRows.length) throw new Error("全部 " + rows.length + " 行均无效，请检查文件格式");
+
+  // 1. 预取该账本所有相关分类 + 账户，避免逐行 find 单条
+  const types = Array.from(new Set(validRows.map((r) => r.type)));
+  const [categorySnap, accountSnap] = await Promise.all([
+    db.collection("categories").where({ familyId: event.familyId, type: db.command.in(types) }).limit(500).get(),
+    db.collection("accounts").where({ familyId: event.familyId }).limit(200).get()
+  ]);
+  const parentIndex = new Map();
+  const childIndex = new Map();
+  for (const c of categorySnap.data) {
+    if (!c.parentId) parentIndex.set(c.type + "::" + c.name, c);
+    else childIndex.set(c.parentId + "::" + c.name, c);
   }
+  const accountIndex = new Map();
+  for (const a of accountSnap.data) accountIndex.set(a.name, a);
+
+  // 2. 收集缺失的 parent categories、accounts（child 依赖 parent，先建 parent）
+  const newParents = [];
+  const newAccounts = [];
+  const newParentKey = new Set();
+  const newAccountName = new Set();
+  for (const row of validRows) {
+    const pKey = row.type + "::" + row.category1;
+    if (!parentIndex.has(pKey) && !newParentKey.has(pKey)) {
+      newParentKey.add(pKey);
+      newParents.push({ type: row.type, name: row.category1 });
+    }
+    const accName = row.account || "现金";
+    if (!accountIndex.has(accName) && !newAccountName.has(accName)) {
+      newAccountName.add(accName);
+      newAccounts.push({ name: accName });
+    }
+  }
+  // 3. 并发创建缺失 parent 与 account
+  const now = new Date();
+  const [parentAdds, accountAdds] = await Promise.all([
+    Promise.all(newParents.map((p) => db.collection("categories").add({ data: { familyId: event.familyId, type: p.type, name: p.name, icon: "❓", parentId: null, enabled: true, createdByImportBatchId: batchId, createTime: now, updatedAt: now } }))),
+    Promise.all(newAccounts.map((a) => db.collection("accounts").add({ data: { familyId: event.familyId, name: a.name, enabled: true, createdByImportBatchId: batchId, createTime: now, updatedAt: now } })))
+  ]);
+  parentAdds.forEach((res, i) => {
+    const p = newParents[i];
+    parentIndex.set(p.type + "::" + p.name, { _id: res._id, name: p.name, type: p.type, icon: "❓" });
+  });
+  // accountIndex 用真实 _id 即可（导入阶段无需后续查询，无需记 _id）
+  newAccounts.forEach((a) => accountIndex.set(a.name, { _id: "_acc_" + a.name, name: a.name }));
+
+  // 4. 收集缺失的 child categories（依赖已就绪的 parentIndex）
+  const newChildren = [];
+  const newChildKey = new Set();
+  for (const row of validRows) {
+    const parent = parentIndex.get(row.type + "::" + row.category1);
+    if (!parent) continue;
+    const cKey = parent._id + "::" + row.category2;
+    if (!childIndex.has(cKey) && !newChildKey.has(cKey)) {
+      newChildKey.add(cKey);
+      newChildren.push({ type: row.type, name: row.category2, parentId: parent._id });
+    }
+  }
+  const childAdds = await Promise.all(newChildren.map((c) => db.collection("categories").add({ data: { familyId: event.familyId, type: c.type, name: c.name, icon: "❓", parentId: c.parentId, enabled: true, createdByImportBatchId: batchId, createTime: now, updatedAt: now } })));
+  childAdds.forEach((res, i) => {
+    const c = newChildren[i];
+    childIndex.set(c.parentId + "::" + c.name, { _id: res._id, name: c.name, type: c.type, icon: "❓" });
+  });
+
+  // 5. 构造账单数据
+  const billData = validRows.map((row) => {
+    const parent = parentIndex.get(row.type + "::" + row.category1);
+    const child = childIndex.get(parent._id + "::" + row.category2);
+    const member = resolveImportedMember(members, row.memberName, operator).member;
+    return {
+      familyId: event.familyId,
+      type: row.type,
+      amount: parseAmountCents(row.amount),
+      category1: row.category1,
+      category1Icon: parent.icon || "❓",
+      category2: row.category2,
+      category2Icon: (child && child.icon) || "❓",
+      account: row.account || "现金",
+      memberOpenid: member.openid,
+      memberId: member._id,
+      member: member.nickName,
+      creatorOpenId: operator.openid,
+      date: validateDateTime(row.date),
+      merchant: normalizeText(row.merchant, 50),
+      remark: normalizeText(row.remark, 200),
+      deleted: false,
+      version: 1,
+      importBatchId: batchId,
+      createdAt: now,
+      updatedAt: now
+    };
+  });
+
+  // 6. 分批并发写入账单（BATCH_SIZE 平衡速率与瞬时并发，云开发约 5-10 并发/连接为安全区）
+  const BATCH_SIZE = 10;
+  let imported = 0;
+  let importedExpense = 0;
+  let importedIncome = 0;
+  let firstError = null;
+  for (let i = 0; i < billData.length; i += BATCH_SIZE) {
+    const chunk = billData.slice(i, i + BATCH_SIZE);
+    const results = await Promise.allSettled(chunk.map((data) => db.collection("bills").add({ data })));
+    for (let j = 0; j < results.length; j += 1) {
+      const r = results[j];
+      if (r.status === "fulfilled") {
+        imported += 1;
+        if (chunk[j].type === "expense") importedExpense += 1;
+        else importedIncome += 1;
+      } else if (!firstError) {
+        firstError = r.reason;
+      }
+    }
+  }
+
   memCacheDel(`categories:${event.familyId}`);
   memCacheDel(`accounts:${event.familyId}`);
-  await writeOperationLog(event.familyId, "import.confirm", batchId, { imported, total: rows.length });
-  return { success: true, imported, skipped: rows.length - imported, batchId };
+
+  if (firstError) {
+    // 保留 batchId，使中途失败后前端仍可对该批次发起回滚，避免半导入账单无法撤销。
+    firstError.batchId = batchId;
+    firstError.imported = imported;
+    throw firstError;
+  }
+  await writeOperationLog(event.familyId, "import.confirm", batchId, { imported, total: rows.length, invalid: invalid.length });
+  return { success: true, imported, importedExpense, importedIncome, skipped: invalid.length, invalid, batchId };
+};
+
+// 校验单行数据，返回 null 表示有效，否则返回错误原因
+const validateRowForImport = (row) => {
+  if (!/^(?:0|[1-9]\d{0,6})(?:\.\d{1,2})?$/.test(row.amount || "")) return "金额格式无效";
+  if (Number(row.amount) <= 0) return "金额必须大于 0";
+  if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(row.date || "")) return "日期格式无效（需 YYYY-MM-DD HH:mm）";
+  if (!row.category1) return "一级分类为空";
+  if (!row.category2) return "二级分类为空";
+  if (!row.account) return "账户为空";
+  if (row.category1.length > 20) return "一级分类超过 20 字";
+  if (row.category2.length > 20) return "二级分类超过 20 字";
+  if (row.account.length > 20) return "账户超过 20 字";
+  if ((row.merchant || "").length > 50) return "商家超过 50 字";
+  if ((row.remark || "").length > 200) return "备注超过 200 字";
+  try { parseAmountCents(row.amount); validateDateTime(row.date); return null; } catch { return "金额或日期解析失败"; }
 };
 
 const rollbackImport = async (event) => {
@@ -731,6 +854,8 @@ const rollbackImport = async (event) => {
   return { success: true, removed: result.length, removedCategories, removedAccounts };
 };
 
+const EXPORT_BILL_LIMIT = 5000;
+
 const exportBills = async (event) => {
   await requireAdmin(event.familyId);
   const where = { familyId: event.familyId, deleted: false };
@@ -745,27 +870,98 @@ const exportBills = async (event) => {
   }
   if (event.type && !["expense", "income"].includes(event.type)) throw new Error("导出账单类型无效");
   if (event.type) where.type = event.type;
-  if (event.categoryLevel === "category1") where.category1 = event.category;
+  // 多选分类：categories: [{ name, type }] —— 双向匹配（同一名字同时查 category1 和 category2）
+  // 理由：用户在前端点选叶子节点（通常是二级），账单实际由 (category1, category2) 共同决定，
+  // 旧版按 level 硬切字段会导致漏选。云函数只关心"匹配到的账单"，level 是 UI 概念。
+  if (Array.isArray(event.categories)) {
+    if (event.categories.length === 0) throw new Error("请至少选择 1 个分类");
+    const orClauses = [];
+    for (const c of event.categories) {
+      if (!c || !c.name) continue;
+      if (c.type) {
+        orClauses.push({ type: c.type, category1: c.name });
+        orClauses.push({ type: c.type, category2: c.name });
+      } else {
+        orClauses.push({ category1: c.name });
+        orClauses.push({ category2: c.name });
+      }
+    }
+    if (orClauses.length) where.$or = orClauses;
+  } else if (event.categoryLevel === "category1") where.category1 = event.category;
   else if (event.categoryLevel === "category2") where.category2 = event.category;
   else if (event.category) where.$or = [{ category1: event.category }, { category2: event.category }];
-  if (event.memberId) {
+  // 多选成员：memberIds: string[] → 转换为 openids 数组
+  if (Array.isArray(event.memberIds)) {
+    if (event.memberIds.length === 0) throw new Error("请至少选择 1 个成员");
+    const members = await getFamilyMembers(event.familyId, "active");
+    const openids = event.memberIds.map((id) => members.find((m) => m._id === id)?.openid).filter(Boolean);
+    if (openids.length) where.memberOpenid = db.command.in(openids);
+  } else if (event.memberId) {
     const memberOpenid = await resolveMemberOpenidForFilter(event.familyId, event.memberId);
     where.memberOpenid = memberOpenid;
   }
-  if (event.account) where.account = event.account;
+  // 多选账户：accounts: string[]
+  if (Array.isArray(event.accounts)) {
+    if (event.accounts.length === 0) throw new Error("请至少选择 1 个账户");
+    where.account = db.command.in(event.accounts);
+  } else if (event.account) where.account = event.account;
   const minAmount = parseOptionalAmountCents(event.minAmount, "最低金额");
   const maxAmount = parseOptionalAmountCents(event.maxAmount, "最高金额");
   if (minAmount !== null && maxAmount !== null && minAmount > maxAmount) throw new Error("导出金额范围无效");
-  const exportBills = await anonymizeCancelledBillMembers(event.familyId, await getAllBills(where));
-  const rows = exportBills.filter((bill) => (minAmount === null || bill.amount >= minAmount) && (maxAmount === null || bill.amount <= maxAmount)).map((bill) => ({ "日期": bill.date, "类型": bill.type === "expense" ? "支出" : "收入", "一级分类": bill.category1, "二级分类": bill.category2, "账户": bill.account, "金额": (bill.amount / 100).toFixed(2), "成员": bill.member, "商家": bill.merchant || "", "备注": bill.remark || "" }));
-  const sheet = XLSX.utils.json_to_sheet(rows);
+  const exportBillsRaw = await anonymizeCancelledBillMembers(event.familyId, await getAllBills(where));
+  const exportBills = exportBillsRaw.filter((bill) => (minAmount === null || bill.amount >= minAmount) && (maxAmount === null || bill.amount <= maxAmount));
+  if (exportBills.length > EXPORT_BILL_LIMIT) {
+    throw new Error("当前筛选匹配 " + exportBills.length + " 条，单次最多 " + EXPORT_BILL_LIMIT + " 条。请缩小时间范围（如本月→本周）或减少选中的分类/账户/成员后重试。");
+  }
+  const mapRow = (bill) => ({ "日期": bill.date, "类型": bill.type === "expense" ? "支出" : "收入", "一级分类": bill.category1, "二级分类": bill.category2, "账户": bill.account, "金额": (bill.amount / 100).toFixed(2), "成员": bill.member, "商家": bill.merchant || "", "备注": bill.remark || "" });
+  const expenseRows = exportBills.filter((b) => b.type === "expense").map(mapRow);
+  const incomeRows = exportBills.filter((b) => b.type === "income").map(mapRow);
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, sheet, "账单");
+  if (expenseRows.length) XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(expenseRows), "支出");
+  if (incomeRows.length) XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(incomeRows), "收入");
+  if (!expenseRows.length && !incomeRows.length) XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([]), "账单");
   const fileContent = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
   const upload = await cloud.uploadFile({ cloudPath: "exports/" + event.familyId + "-" + Date.now() + ".xlsx", fileContent });
-  const urls = await cloud.getTempFileURL({ fileList: [upload.fileID] });
-  await writeOperationLog(event.familyId, "export.create", upload.fileID, { count: rows.length });
-  return { success: true, count: rows.length, tempFileURL: urls.fileList[0]?.tempFileURL || "" };
+  await writeOperationLog(event.familyId, "export.create", upload.fileID, { count: exportBills.length, expenseCount: expenseRows.length, incomeCount: incomeRows.length });
+  // 直接返回 fileID，前端用 wx.cloud.downloadFile 下载（比 HTTPS 临时链接更稳定，模拟器也能拿到 tempFilePath）
+  return { success: true, count: exportBills.length, expenseCount: expenseRows.length, incomeCount: incomeRows.length, fileID: upload.fileID };
+};
+
+// 调试用：统计账单条数（总数、支出/收入、按分类、按账户、已删除数）。云端测试传 { familyId } 即可。
+const debugBillCounts = async (event) => {
+  await requireAdmin(event.familyId);
+  const where = { familyId: event.familyId };
+  const all = await getAllBills(where);
+  const active = all.filter((b) => !b.deleted);
+  const deleted = all.filter((b) => b.deleted);
+  const expense = active.filter((b) => b.type === "expense");
+  const income = active.filter((b) => b.type === "income");
+  const other = active.filter((b) => b.type !== "expense" && b.type !== "income");
+
+  const groupBy = (rows, keyFn) => {
+    const map = new Map();
+    rows.forEach((r) => {
+      const k = keyFn(r) || "(空)";
+      map.set(k, (map.get(k) || 0) + 1);
+    });
+    return Array.from(map.entries()).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+  };
+
+  return {
+    success: true,
+    summary: {
+      total: all.length,
+      active: active.length,
+      deleted: deleted.length,
+      expense: expense.length,
+      income: income.length,
+      otherType: other.length
+    },
+    byCategory1: groupBy(active, (b) => b.category1),
+    byCategory2: groupBy(active, (b) => b.category2),
+    byAccount: groupBy(active, (b) => b.account),
+    byType: groupBy(active, (b) => b.type)
+  };
 };
 
 const listOperationLogs = async (event) => {
@@ -830,7 +1026,7 @@ const listFormOptions = async (event) => {
     const where = { familyId };
     if (type) where.type = type;
     dbTasks.push(
-      db.collection("categories").where(where).orderBy("createTime", "asc").get().then((result) => {
+      db.collection("categories").where(where).orderBy("createTime", "asc").limit(1000).get().then((result) => {
         const active = result.data.filter((item) => item.enabled !== false);
         const parents = active.filter((item) => !item.parentId);
         categories = parents.map((parent) => ({
@@ -846,7 +1042,7 @@ const listFormOptions = async (event) => {
   }
   if (!accounts) {
     dbTasks.push(
-      db.collection("accounts").where({ familyId }).orderBy("createTime", "asc").get().then((result) => {
+      db.collection("accounts").where({ familyId }).orderBy("createTime", "asc").limit(200).get().then((result) => {
         accounts = result.data.filter((item) => item.enabled !== false);
         memCacheSet(accountCacheKey, accounts);
       })
@@ -1032,6 +1228,10 @@ const deleteBill = async (event) => {
 
 const listBills = async (event) => {
   const { familyId, month, category, categoryLevel, memberId, account, type, dateStart, dateEnd, minAmount, maxAmount, merchant, remark } = event;
+  const categories = Array.isArray(event.categories) ? event.categories : null;
+  const accounts = Array.isArray(event.accounts) ? event.accounts.map((item) => String(item || "").trim()).filter(Boolean) : null;
+  const memberIds = Array.isArray(event.memberIds) ? event.memberIds.map((item) => String(item || "").trim()).filter(Boolean) : null;
+  const types = Array.isArray(event.types) ? event.types.map((item) => String(item || "").trim()).filter(Boolean) : null;
   const currentMember = await requireMember(familyId);
   const where = { familyId, deleted: false };
   if (dateStart || dateEnd) {
@@ -1043,16 +1243,47 @@ const listBills = async (event) => {
     const bounds = getMonthBounds(month);
     where.date = db.command.gte(bounds.start).and(db.command.lt(bounds.end));
   }
-  if (categoryLevel === "category1") where.category1 = category;
+  if (categories) {
+    if (categories.length === 0) throw new Error("请至少选择 1 个分类");
+    const orClauses = [];
+    categories.forEach((item) => {
+      if (!item || !item.name) return;
+      const name = String(item.name).trim();
+      if (!name) return;
+      if (item.type) {
+        orClauses.push({ type: item.type, category1: name });
+        orClauses.push({ type: item.type, category2: name });
+      } else {
+        orClauses.push({ category1: name });
+        orClauses.push({ category2: name });
+      }
+    });
+    if (orClauses.length) where.$or = orClauses;
+  } else if (categoryLevel === "category1") where.category1 = category;
   else if (categoryLevel === "category2") where.category2 = category;
   else if (category) where.$or = [{ category1: category }, { category2: category }];
-  if (memberId) {
+  if (memberIds) {
+    if (memberIds.length === 0) throw new Error("请至少选择 1 个成员");
+    const members = await getFamilyMembers(familyId, "active");
+    const openids = memberIds.map((id) => members.find((item) => item._id === id)?.openid).filter(Boolean);
+    if (openids.length !== memberIds.length) throw new Error("成员筛选条件无效");
+    where.memberOpenid = db.command.in(openids);
+  } else if (memberId) {
     const memberOpenid = await resolveMemberOpenidForFilter(familyId, memberId);
     where.memberOpenid = memberOpenid;
   }
-  if (account) where.account = account;
-  if (type && !["expense", "income"].includes(type)) throw new Error("账单类型无效");
-  if (type) where.type = type;
+  if (accounts) {
+    if (accounts.length === 0) throw new Error("请至少选择 1 个账户");
+    where.account = db.command.in(accounts);
+  } else if (account) where.account = account;
+  if (types) {
+    if (types.length === 0) throw new Error("请至少选择 1 个流水类型");
+    if (types.some((item) => !["expense", "income"].includes(item))) throw new Error("账单类型无效");
+    where.type = db.command.in(types);
+  } else {
+    if (type && !["expense", "income"].includes(type)) throw new Error("账单类型无效");
+    if (type) where.type = type;
+  }
   if (merchant) where.merchant = db.RegExp({ regexp: merchant, options: "i" });
   if (remark) where.remark = db.RegExp({ regexp: remark, options: "i" });
   const minimum = parseOptionalAmountCents(minAmount, "最低金额");
@@ -1080,10 +1311,12 @@ const listBills = async (event) => {
 };
 
 const getStats = async (event) => {
-  const { familyId, month, year, dateStart, dateEnd, memberId, account, category, includeFuture = false } = event;
+  const { familyId, month, year, dateStart, dateEnd, memberId, account, category, includeFuture = false, allTime = false } = event;
   await requireMember(familyId);
   let bounds;
-  if (/^\d{4}$/.test(String(year || ""))) {
+  if (allTime) {
+    bounds = { start: "0000-01-01 00:00", end: "9999-12-31 23:59" };
+  } else if (/^\d{4}$/.test(String(year || ""))) {
     bounds = { start: year + "-01-01 00:00", end: String(Number(year) + 1) + "-01-01 00:00" };
   } else if (/^\d{4}-\d{2}-\d{2}$/.test(String(dateStart || "")) || /^\d{4}-\d{2}-\d{2}$/.test(String(dateEnd || ""))) {
     bounds = {
@@ -1119,13 +1352,26 @@ const getStats = async (event) => {
     if (memberOpenid) match.memberOpenid = memberOpenid;
   }
 
-  const agg = await db.collection("bills").aggregate()
-    .match(match)
-    .group({
-      _id: { type: "$type", category2: "$category2", category2Icon: "$category2Icon", date: $.substr(["$date", 0, 10]) },
-      amount: $.sum("$amount")
-    })
-    .end();
+  // 拆成两次 aggregate：单次 .end() 上限 1000 行。
+  // 一次按 (type+category2) 聚合分类排行，体积 ≈ 2 * 分类数（< 100）
+  // 一次按 (type+date) 聚合按日趋势，体积 ≈ 2 * 有账单的日期数（典型 < 800）
+  // 任一都不会触顶；总额在客户端再合并，避免丢数据。
+  const [categoryAgg, dailyAgg] = await Promise.all([
+    db.collection("bills").aggregate()
+      .match(match)
+      .group({
+        _id: { type: "$type", category2: "$category2", category2Icon: "$category2Icon" },
+        amount: $.sum("$amount")
+      })
+      .end(),
+    db.collection("bills").aggregate()
+      .match(match)
+      .group({
+        _id: { type: "$type", date: $.substr(["$date", 0, 10]) },
+        amount: $.sum("$amount")
+      })
+      .end()
+  ]);
 
   let totalExpenseCents = 0;
   let totalIncomeCents = 0;
@@ -1133,7 +1379,7 @@ const getStats = async (event) => {
   const incomeCategories = {};
   const dailyStats = {};
 
-  (agg.list || []).forEach((row) => {
+  (categoryAgg.list || []).forEach((row) => {
     const amount = Number(row.amount || 0);
     if (row._id.type === "expense") {
       totalExpenseCents += amount;
@@ -1148,6 +1394,10 @@ const getStats = async (event) => {
       }
       incomeCategories[row._id.category2].amount += amount;
     }
+  });
+
+  (dailyAgg.list || []).forEach((row) => {
+    const amount = Number(row.amount || 0);
     const dateKey = row._id.date;
     if (!dailyStats[dateKey]) dailyStats[dateKey] = { date: dateKey, expense: 0, income: 0 };
     if (row._id.type === "expense") dailyStats[dateKey].expense += amount;
@@ -1286,10 +1536,12 @@ const main = async (event = {}) => {
     ,deleteBudget
     ,getBudgetPageData
     ,searchBills
+    ,getImportTemplate
     ,previewImport
     ,confirmImport
     ,rollbackImport
     ,exportBills
+    ,debugBillCounts
     ,listOperationLogs
     ,getHomeSummary
   };

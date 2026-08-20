@@ -1,4 +1,20 @@
 const app = getApp();
+
+const formatBudget = (raw) => {
+  if (!raw) return null;
+  const percent = Number(raw.percent) || 0;
+  const remain = Number(raw.remain) || 0;
+  return {
+    amount: Number(raw.amount || 0).toFixed(2),
+    expense: Number(raw.expense || 0).toFixed(2),
+    remain: Math.abs(remain).toFixed(2),
+    percent,
+    isOver: percent >= 100,
+    isWarning: percent >= 80 && percent < 100,
+    displayPercent: percent > 100 ? "100%+" : percent + "%",
+    barWidth: Math.min(percent, 100)
+  };
+};
 const brand = require("../../utils/brand");
 
 Page({
@@ -82,7 +98,7 @@ Page({
       monthExpense: cached.summary.monthExpense || "0.00",
       monthIncome: cached.summary.monthIncome || "0.00",
       monthBalance: cached.summary.monthBalance || "0.00",
-      budget: cached.summary.budget || null,
+      budget: formatBudget(cached.summary && cached.summary.budget),
       recentBills: bills,
       groupedBills: this._groupRecentBills(bills),
       hasCache: true,
@@ -234,7 +250,7 @@ Page({
         monthExpense,
         monthIncome,
         monthBalance,
-        budget: summary.budget || null,
+        budget: formatBudget(summary.budget),
         recentBills,
         groupedBills,
         hasCache: true
@@ -256,8 +272,7 @@ Page({
           familyName: this.data.familyName,
           isOwner: this.data.isOwner,
           familyAdminName: this.data.familyAdminName,
-          summary: { todayExpense, monthExpense, monthIncome, monthBalance },
-          budget: summary.budget || null,
+          summary: { todayExpense, monthExpense, monthIncome, monthBalance, budget: summary.budget || null },
           recentBills,
           groupedBills
         });
@@ -537,6 +552,68 @@ Page({
     if (this.data.showSwipeGuide) {
       wx.setStorageSync("hasSeenSwipeGuide", true);
       this.setData({ showSwipeGuide: false });
+    }
+  },
+
+  async editFamilyName() {
+    // 顶部"我的家庭账本"内联编辑：仅管理员可改
+    if (!this.data.isOwner) {
+      wx.showToast({ title: "仅管理员可修改", icon: "none" });
+      return;
+    }
+    const familyId = this.data.currentFamilyId;
+    if (!familyId) return;
+    const modal = await new Promise((resolve) => {
+      wx.showModal({
+        title: "修改账本名称",
+        editable: true,
+        content: this.data.familyName || "",
+        placeholderText: "请输入新的账本名称",
+        success: resolve
+      });
+    });
+    if (!modal.confirm) return;
+    const name = String(modal.content || "").trim();
+    if (!name) {
+      wx.showToast({ title: "名称不能为空", icon: "none" });
+      return;
+    }
+    if (name === this.data.familyName) {
+      wx.showToast({ title: "名称未变化", icon: "none" });
+      return;
+    }
+    try {
+      wx.showLoading({ title: "保存中", mask: true });
+      const response = await wx.cloud.callFunction({
+        name: "ledgerFunctions",
+        data: { action: "renameFamily", familyId, name }
+      });
+      if (!response.result || !response.result.success) {
+        throw new Error(response.result?.message || "修改失败");
+      }
+      const newName = response.result.name || name;
+      // 1) 首页顶部立即更新
+      this.setData({ familyName: newName });
+      // 2) 同步全局 currentFamily + 缓存（统计/账单等页面从这里读）
+      const currentFamily = app.globalData.currentFamily;
+      if (currentFamily && currentFamily.id === familyId) {
+        app.globalData.currentFamily = { ...currentFamily, name: newName };
+        try { wx.setStorageSync("currentFamilyCache", app.globalData.currentFamily); } catch (e) {}
+      }
+      // 3) 同步首页摘要快照（applyCachedHome 会从这里读 familyName）
+      try {
+        const cacheKey = `home:summary:${familyId}`;
+        const cached = wx.getStorageSync(cacheKey);
+        if (cached) {
+          cached.familyName = newName;
+          wx.setStorageSync(cacheKey, cached);
+        }
+      } catch (e) {}
+      wx.showToast({ title: "已修改", icon: "success" });
+    } catch (error) {
+      wx.showToast({ title: error.message || "修改失败", icon: "none" });
+    } finally {
+      wx.hideLoading();
     }
   },
 

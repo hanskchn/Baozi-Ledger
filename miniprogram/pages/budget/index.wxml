@@ -61,5 +61,5 @@
     </view>
   </view>
 
-  <button wx:if="{{isAdmin}}" class="save-btn {{budgetAmount && budgetAmount !== savedAmount && Number(budgetAmount) > 0 ? '' : 'disabled'}}" disabled="{{!budgetAmount || budgetAmount === savedAmount || Number(budgetAmount) <= 0}}" bindtap="saveBudget">保存</button>
+  <button wx:if="{{isAdmin}}" class="save-btn" bindtap="saveBudget">保存</button>
 </view>

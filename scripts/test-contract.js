@@ -188,6 +188,40 @@ test("listBills 跨账本非成员被拒", async () => {
   assert.match(result.message, /你不是该家庭成员/);
 });
 
+test("listBills 支持多选分类、账户、成员和类型", async () => {
+  seed();
+  openid = "member";
+  db._rows("accounts").push({ _id: "acc-bank", familyId: "famA", name: "银行卡", enabled: true });
+  const baseBill = { familyId: "famA", category1Icon: "📝", category2Icon: "📝", date: "2026-08-13 12:00", creatorOpenId: "member", deleted: false, version: 1 };
+  db._rows("bills").push(
+    { _id: "multi-lunch-cash", ...baseBill, type: "expense", amount: 1000, category1: "餐饮", category2: "午餐", account: "现金", memberOpenid: "member", memberId: "m-member", member: "成员" },
+    { _id: "multi-salary-bank", ...baseBill, type: "income", amount: 2000, category1: "工资", category2: "底薪", account: "银行卡", memberOpenid: "admin", memberId: "m-admin", member: "管理员" },
+    { _id: "multi-lunch-bank", ...baseBill, type: "expense", amount: 3000, category1: "餐饮", category2: "午餐", account: "银行卡", memberOpenid: "admin", memberId: "m-admin", member: "管理员" }
+  );
+
+  const byCategory = await invoke({ action: "listBills", familyId: "famA", categories: [{ name: "午餐", type: "expense" }], limit: 20, offset: 0 });
+  assert.equal(byCategory.success, true);
+  assert.equal(byCategory.bills.some((bill) => bill._id === "multi-salary-bank"), false);
+  assert.equal(byCategory.bills.filter((bill) => bill._id.startsWith("multi-")).length, 2);
+
+  const byAccount = await invoke({ action: "listBills", familyId: "famA", accounts: ["银行卡"], limit: 20, offset: 0 });
+  assert.deepEqual(byAccount.bills.map((bill) => bill._id).sort(), ["multi-lunch-bank", "multi-salary-bank"]);
+
+  const byMember = await invoke({ action: "listBills", familyId: "famA", memberIds: ["m-admin"], limit: 20, offset: 0 });
+  assert.deepEqual(byMember.bills.map((bill) => bill._id).sort(), ["bill-admin", "multi-lunch-bank", "multi-salary-bank"]);
+
+  const byType = await invoke({ action: "listBills", familyId: "famA", types: ["income"], limit: 20, offset: 0 });
+  assert.deepEqual(byType.bills.map((bill) => bill._id), ["multi-salary-bank"]);
+});
+
+test("listBills 多选条件为空数组时拒绝", async () => {
+  seed();
+  openid = "member";
+  const result = await invoke({ action: "listBills", familyId: "famA", types: [], accounts: [], memberIds: [], categories: [], limit: 20, offset: 0 });
+  assert.equal(result.success, false);
+  assert.match(result.message, /请至少选择/);
+});
+
 test("getStats 月度聚合：支出/收入/结余与分类排行", async () => {
   seed();
   openid = "member";
@@ -212,10 +246,32 @@ test("getStats 当前月默认排除未来账单", async () => {
   db._rows("bills").push({
     _id: "bill-future", familyId: "famA", type: "expense", amount: 9999,
     category1: "餐饮", category1Icon: "🍜", category2: "午餐", category2Icon: "🍱",
-    account: "现金", date: "2026-08-20 12:00", memberOpenid: "member", memberId: "m-member", member: "成员",
+    account: "现金", date: "2099-08-20 12:00", memberOpenid: "member", memberId: "m-member", member: "成员",
     creatorOpenId: "member", deleted: false, version: 1
   });
   const result = await invoke({ action: "getStats", familyId: "famA", month: "2026-08" });
+
+
+test("getStats allTime 不过滤日期", async () => {
+  seed();
+  openid = "member";
+  db._rows("bills").push({
+    _id: "bill-historic", familyId: "famA", type: "expense", amount: 1234,
+    category1: "餐饮", category1Icon: "🍜", category2: "午餐", category2Icon: "🍱",
+    account: "现金", date: "2020-01-15 12:00", memberOpenid: "member", memberId: "m-member", member: "成员",
+    creatorOpenId: "member", deleted: false, version: 1
+  });
+  const result = await invoke({ action: "getStats", familyId: "famA", allTime: true });
+  assert.equal(result.success, true);
+  assert.ok(result.totalExpense >= 12.34, "全部时间应包含 2020 年的历史账单");
+  // 总额应等于 dailyTrend 之和（拆分 aggregate 后保持一致）
+  const trendTotal = (result.dailyTrend || []).reduce((s, x) => s + Number(x.expense || 0) + Number(x.income || 0), 0);
+  assert.equal(Number(result.totalExpense) + Number(result.totalIncome), trendTotal, "分类/日期两条 aggregate 的总额必须一致");
+  // 分类排行之和也应等于总额
+  const categoryTotal = (result.expenseCategoryStats || []).reduce((s, x) => s + Number(x.amount || 0), 0)
+    + (result.incomeCategoryStats || []).reduce((s, x) => s + Number(x.amount || 0), 0);
+  assert.equal(categoryTotal, Number(result.totalExpense) + Number(result.totalIncome), "分类聚合总额必须等于总额");
+});
   assert.equal(result.success, true);
   assert.equal(result.totalExpense, 30.0);
 });
@@ -245,7 +301,7 @@ test("exportBills 仅管理员可导出且生成下载链接", async () => {
   const result = await invoke({ action: "exportBills", familyId: "famA" });
   assert.equal(result.success, true);
   assert.equal(result.count, 2);
-  assert.ok(result.tempFileURL.length > 0);
+  assert.ok(result.fileID && result.fileID.length > 0);
 });
 
 test("exportBills 支持类型筛选", async () => {
@@ -286,4 +342,54 @@ test("listOperationLogs 仅管理员可读", async () => {
   const result = await invoke({ action: "listOperationLogs", familyId: "famA" });
   assert.equal(result.success, true);
   assert.ok(Array.isArray(result.logs));
+});
+
+// 锁死 fake-db 的 aggregate() / .and() 链式桩，避免未来回归
+test("fake-db aggregate() 链式：match + group + sum", () => {
+  const { makeCloud } = require("./fake-db");
+  const cloud = makeCloud(() => "tester");
+  const db = cloud.database();
+  db._rows("bills").push(
+    { _id: "b1", amount: 100, type: "expense", category2: "午餐", date: "2026-08-13 12:00" },
+    { _id: "b2", amount: 200, type: "expense", category2: "午餐", date: "2026-08-13 18:00" },
+    { _id: "b3", amount: 500, type: "income", category2: "工资", date: "2026-08-15 09:00" }
+  );
+  return db.collection("bills").aggregate()
+    .match({ type: "expense" })
+    .group({ _id: "$category2", amount: db.command.aggregate.sum("$amount") })
+    .end()
+    .then((res) => {
+      assert.equal(res.list.length, 1);
+      assert.equal(res.list[0]._id, "午餐");
+      assert.equal(res.list[0].amount, 300);
+    });
+});
+
+test("fake-db aggregate() 支持 substr 表达式", () => {
+  const { makeCloud } = require("./fake-db");
+  const cloud = makeCloud(() => "tester");
+  const db = cloud.database();
+  db._rows("bills").push(
+    { _id: "b1", amount: 100, type: "expense", date: "2026-08-13 12:00" },
+    { _id: "b2", amount: 200, type: "expense", date: "2026-08-14 12:00" }
+  );
+  return db.collection("bills").aggregate()
+    .group({
+      _id: { day: db.command.aggregate.substr(["$date", 0, 10]) },
+      amount: db.command.aggregate.sum("$amount")
+    })
+    .end()
+    .then((res) => {
+      assert.equal(res.list.length, 2);
+      const days = res.list.map((r) => r._id.day).sort();
+      assert.deepEqual(days, ["2026-08-13", "2026-08-14"]);
+    });
+});
+
+test("fake-db and() 支持链式（gte().and().and()）", () => {
+  const { matchValue } = require("./fake-db");
+  const cmd = require("./fake-db").makeCloud(() => "x").command;
+  const cond = cmd.gte("2026-08-01").and(cmd.lt("2026-09-01")).and(cmd.lte("2026-08-31 23:59"));
+  assert.equal(matchValue("2026-08-13 12:00", cond), true);
+  assert.equal(matchValue("2026-09-01 00:00", cond), false);
 });

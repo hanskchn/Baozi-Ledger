@@ -1,53 +1,55 @@
 const app = getApp();
 
+const TYPE_OPTIONS = [
+  { id: "expense", name: "支出" },
+  { id: "income", name: "收入" }
+];
+
 Page({
   data: {
     // 时间
-    filterMonth: '',
-    filterDateStart: '',
-    filterDateEnd: '',
-    timeDisplay: '全部时间',
-    timeMode: 'all', // all | month | range
-    quick: 'thisMonth', // thisMonth | lastMonth | thisYear | all | custom
-    tempMonth: '',
-    tempDateStart: '',
-    tempDateEnd: '',
+    filterMonth: "",
+    filterDateStart: "",
+    filterDateEnd: "",
+    timeDisplay: "全部时间",
+    timeMode: "all",
+    quick: "thisMonth",
+    tempMonth: "",
+    tempDateStart: "",
+    tempDateEnd: "",
     showTimeSheet: false,
     // 分类
-    filterCategory: '',
-    filterCategoryType: '',
-    filterCategoryLevel: '',
-    categoryDisplay: '全部',
-    categories: [],
-    visibleCategoryGroups: [],
+    allCategories: [],
+    categoryGroups: { expense: [], income: [] },
+    allCategoryIds: [],
+    selectedCategoryIds: [],
+    tempCategoryIds: [],
+    categoryDisplay: "全选",
     showCategorySheet: false,
+    legacyCategory: null,
     // 账户
-    filterAccount: '',
-    accountDisplay: '全部',
-    accounts: [],
-    accountOptions: ['全部'],
-    accountIndex: 0,
+    accountList: [],
+    selectedAccountIds: [],
+    selectedAccountMap: {},
+    accountDisplay: "全选",
+    showAccountPanel: false,
     // 流水类型
-    filterType: '',
-    typeDisplay: '全部',
-    typeOptions: ['全部', '支出', '收入'],
-    typeValues: ['', 'expense', 'income'],
-    typeIndex: 0,
+    typeOptions: TYPE_OPTIONS,
+    selectedTypes: [],
+    selectedTypeMap: {},
+    typeDisplay: "全选",
+    showTypePanel: false,
     // 成员
-    filterMember: '',
-    filterMemberLabel: '',
-    memberDisplay: '全部',
-    members: [],
-    memberOptions: ['全部'],
-    memberValues: [''],
-    memberIndex: 0,
-    // 商家
-    merchant: '',
-    // 金额
-    minAmount: '',
-    maxAmount: '',
-    // 备注
-    remark: ''
+    memberList: [],
+    selectedMemberIds: [],
+    selectedMemberMap: {},
+    memberDisplay: "全选",
+    showMemberPanel: false,
+    // 其他
+    merchant: "",
+    minAmount: "",
+    maxAmount: "",
+    remark: ""
   },
 
   onLoad(options) {
@@ -55,63 +57,77 @@ Page({
     this._loadOptions();
   },
 
+  _parseArray(value) {
+    if (!value) return [];
+    try {
+      const parsed = JSON.parse(decodeURIComponent(value));
+      return Array.isArray(parsed) ? parsed.map((item) => String(item || "")) : [];
+    } catch (error) {
+      return [];
+    }
+  },
+
   _initFromOptions(options) {
-    const decode = (v) => (v ? decodeURIComponent(v) : '');
+    const decode = (value) => (value ? decodeURIComponent(value) : "");
     const filterMonth = decode(options.filterMonth);
     const filterDateStart = decode(options.filterDateStart);
     const filterDateEnd = decode(options.filterDateEnd);
-    const filterType = decode(options.filterType);
+    const now = new Date(Date.now() + 8 * 60 * 60 * 1000);
+    const thisMonth = now.getUTCFullYear() + "-" + String(now.getUTCMonth() + 1).padStart(2, "0");
+    const prev = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+    const lastMonth = prev.getUTCFullYear() + "-" + String(prev.getUTCMonth() + 1).padStart(2, "0");
     const patch = {
       filterMonth,
       filterDateStart,
       filterDateEnd,
-      filterType,
-      filterCategory: decode(options.filterCategory),
-      filterCategoryLevel: decode(options.filterCategoryLevel),
-      filterAccount: decode(options.filterAccount),
-      filterMember: decode(options.filterMember),
-      filterMemberLabel: decode(options.filterMemberLabel),
+      tempMonth: filterMonth || thisMonth,
+      tempDateStart: filterDateStart,
+      tempDateEnd: filterDateEnd,
+      selectedTypes: this._parseArray(options.selectedTypes),
+      selectedAccountIds: this._parseArray(options.selectedAccountIds),
+      selectedMemberIds: this._parseArray(options.selectedMemberIds),
+      selectedCategoryIds: this._parseArray(options.selectedCategoryIds),
       merchant: decode(options.merchant),
       minAmount: decode(options.minAmount),
       maxAmount: decode(options.maxAmount),
       remark: decode(options.remark)
     };
 
-    const now = new Date(Date.now() + 8 * 60 * 60 * 1000);
-    const thisMonth = now.getUTCFullYear() + '-' + String(now.getUTCMonth() + 1).padStart(2, '0');
-    const prev = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
-    const lastMonth = prev.getUTCFullYear() + '-' + String(prev.getUTCMonth() + 1).padStart(2, '0');
-
     if (filterDateStart || filterDateEnd) {
-      patch.timeMode = 'range';
-      patch.quick = 'custom';
-      patch.tempDateStart = filterDateStart;
-      patch.tempDateEnd = filterDateEnd;
-      patch.timeDisplay = (filterDateStart || '') + ' ~ ' + (filterDateEnd || '');
+      patch.timeMode = "range";
+      patch.quick = "custom";
+      patch.timeDisplay = (filterDateStart || "") + " ~ " + (filterDateEnd || "");
     } else if (filterMonth) {
-      patch.timeMode = 'month';
-      patch.tempMonth = filterMonth;
-      if (filterMonth === thisMonth) { patch.quick = 'thisMonth'; patch.timeDisplay = '本月'; }
-      else if (filterMonth === lastMonth) { patch.quick = 'lastMonth'; patch.timeDisplay = '上月'; }
-      else {
-        patch.quick = 'custom';
-        const [y, m] = filterMonth.split('-');
-        patch.timeDisplay = y + '年' + Number(m) + '月';
-      }
+      patch.timeMode = "month";
+      patch.quick = filterMonth === thisMonth ? "thisMonth" : (filterMonth === lastMonth ? "lastMonth" : "custom");
+      patch.timeDisplay = filterMonth === thisMonth ? "本月" : (filterMonth === lastMonth ? "上月" : this._formatMonth(filterMonth));
     } else {
-      patch.timeMode = 'all';
-      patch.quick = 'all';
-      patch.tempMonth = thisMonth;
-      patch.timeDisplay = '全部时间';
+      patch.timeMode = "all";
+      patch.quick = "all";
+      patch.timeDisplay = "全部时间";
     }
-    if (filterType) {
-      patch.typeIndex = filterType === 'income' ? 2 : 1;
-      patch.typeDisplay = filterType === 'income' ? '收入' : '支出';
+
+    const legacyType = decode(options.filterType);
+    if (legacyType && ["expense", "income"].includes(legacyType)) patch.selectedTypes = [legacyType];
+
+    const legacyCategory = decode(options.filterCategory);
+    if (legacyCategory) {
+      patch.legacyCategory = {
+        name: legacyCategory,
+        level: decode(options.filterCategoryLevel),
+        type: decode(options.filterCategoryType)
+      };
     }
-    if (patch.filterCategory) patch.categoryDisplay = patch.filterCategory;
-    if (patch.filterAccount) patch.accountDisplay = patch.filterAccount;
-    if (patch.filterMemberLabel) patch.memberDisplay = patch.filterMemberLabel;
-    else if (patch.filterMember) patch.memberDisplay = '已选成员';
+
+    if (patch.selectedTypes.length === 0) patch.selectedTypes = ["expense", "income"];
+    patch.selectedTypeMap = this._boolMap(patch.selectedTypes);
+
+    const legacyAccount = decode(options.filterAccount);
+    if (legacyAccount && patch.selectedAccountIds.length === 0) patch.legacyAccountName = legacyAccount;
+
+    const legacyMember = decode(options.filterMember);
+    if (legacyMember && patch.selectedMemberIds.length === 0) patch.selectedMemberIds = [legacyMember];
+
     this.setData(patch);
   },
 
@@ -120,328 +136,384 @@ Page({
     if (!familyId) return;
     try {
       const res = await wx.cloud.callFunction({
-        name: 'accountingFunctions',
-        data: { action: 'listFormOptions', familyId }
+        name: "accountingFunctions",
+        data: { action: "listFormOptions", familyId }
       });
       const categories = res.result?.categories || [];
+      const accounts = (res.result?.accounts || []).filter((item) => item.enabled !== false);
       const members = res.result?.members || [];
-      const accounts = res.result?.accounts || [];
-      const accountOptions = ["全部"].concat(accounts.map((item) => item.name));
-      const memberOptions = ["全部"].concat(members.map((item) => item.nickName || "微信用户"));
-      const memberValues = [""].concat(members.map((item) => item.memberId));
-      const patch = {
-        categories, members, accounts,
-        accountOptions, memberOptions, memberValues
-      };
-      const accIdx = accountOptions.indexOf(this.data.filterAccount);
-      if (accIdx > 0) patch.accountIndex = accIdx;
-      const memIdx = memberValues.indexOf(this.data.filterMember);
-      if (memIdx > 0) {
-        patch.memberIndex = memIdx;
-        patch.memberDisplay = memberOptions[memIdx];
-        patch.filterMemberLabel = memberOptions[memIdx];
+      const allCategoryIds = [];
+      categories.forEach((parent) => (parent.children || []).forEach((child) => allCategoryIds.push(child.id)));
+
+      let selectedCategoryIds = this.data.selectedCategoryIds.filter((id) => allCategoryIds.indexOf(id) >= 0);
+      if (this.data.legacyCategory) selectedCategoryIds = this._resolveLegacyCategoryIds(categories, this.data.legacyCategory);
+      if (selectedCategoryIds.length === 0) selectedCategoryIds = [...allCategoryIds];
+
+      let selectedAccountIds = this.data.selectedAccountIds.filter((id) => accounts.some((account) => account._id === id));
+      if (this.data.legacyAccountName) {
+        const matched = accounts.find((account) => account.name === this.data.legacyAccountName);
+        if (matched) selectedAccountIds = [matched._id];
       }
-      patch.visibleCategoryGroups = this._buildCategoryGroups(categories, this.data.filterType);
-      this.setData(patch);
-    } catch (e) {
-      console.error('筛选页加载选项失败', e);
+      if (selectedAccountIds.length === 0) selectedAccountIds = accounts.map((account) => account._id);
+
+      let selectedMemberIds = this.data.selectedMemberIds.filter((id) => members.some((member) => member.memberId === id));
+      if (selectedMemberIds.length === 0) selectedMemberIds = members.map((member) => member.memberId);
+
+      const selectedTypes = this.data.selectedTypes.filter((type) => ["expense", "income"].includes(type));
+
+      this.setData({
+        allCategories: categories,
+        allCategoryIds,
+        accountList: accounts,
+        memberList: members,
+        selectedCategoryIds,
+        selectedAccountIds,
+        selectedMemberIds,
+        selectedTypes: selectedTypes.length ? selectedTypes : ["expense", "income"],
+        legacyCategory: null
+      });
+      this._syncMaps();
+      this._refreshDisplays();
+    } catch (error) {
+      console.error("筛选页加载选项失败", error);
+      wx.showToast({ title: "加载选项失败", icon: "none" });
     }
   },
 
-  // ========== 时间弹层 ==========
+  _resolveLegacyCategoryIds(categories, legacy) {
+    const ids = [];
+    categories.forEach((parent) => {
+      if ((legacy.type || legacy.filterType) && parent.type !== (legacy.type || legacy.filterType)) return;
+      if (legacy.level === "category1" && parent.name === legacy.name) {
+        (parent.children || []).forEach((child) => ids.push(child.id));
+      }
+      (parent.children || []).forEach((child) => {
+        if (legacy.level !== "category1" && child.name === legacy.name) ids.push(child.id);
+      });
+    });
+    return Array.from(new Set(ids));
+  },
+
+  _boolMap(list) {
+    const map = {};
+    (list || []).forEach((id) => { map[id] = true; });
+    return map;
+  },
+
+  _syncMaps() {
+    this.setData({
+      selectedAccountMap: this._boolMap(this.data.selectedAccountIds),
+      selectedMemberMap: this._boolMap(this.data.selectedMemberIds),
+      selectedTypeMap: this._boolMap(this.data.selectedTypes)
+    });
+  },
+
+  _formatCount(selected, total, noneText) {
+    if (total === 0) return noneText;
+    if (selected.length === 0) return "未选";
+    if (selected.length === total) return "全选";
+    return "已选 " + selected.length + " / " + total;
+  },
+
+  _refreshDisplays() {
+    this.setData({
+      categoryDisplay: this._formatCount(this.data.selectedCategoryIds, this.data.allCategoryIds.length, "暂无分类"),
+      accountDisplay: this._formatCount(this.data.selectedAccountIds, this.data.accountList.length, "暂无账户"),
+      memberDisplay: this._formatCount(this.data.selectedMemberIds, this.data.memberList.length, "暂无成员"),
+      typeDisplay: this._formatCount(this.data.selectedTypes, this.data.typeOptions.length, "暂无类型")
+    });
+  },
+
+  stopPropagation() {},
+
+  // ========== 时间 ==========
   openTimeSheet() {
-    this.setData({ showTimeSheet: true });
+    this.setData({
+      showTimeSheet: true,
+      tempMonth: this.data.filterMonth || this.data.tempMonth,
+      tempDateStart: this.data.filterDateStart,
+      tempDateEnd: this.data.filterDateEnd
+    });
   },
   closeTimeSheet() {
     this.setData({ showTimeSheet: false });
   },
-  stopPropagation() {},
-
   selectQuick(e) {
     const key = e.currentTarget.dataset.key;
     const now = new Date(Date.now() + 8 * 60 * 60 * 1000);
-    const thisMonth = now.getUTCFullYear() + '-' + String(now.getUTCMonth() + 1).padStart(2, '0');
+    const thisMonth = now.getUTCFullYear() + "-" + String(now.getUTCMonth() + 1).padStart(2, "0");
     const prev = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
-    const lastMonth = prev.getUTCFullYear() + '-' + String(prev.getUTCMonth() + 1).padStart(2, '0');
-    const thisYearStart = now.getUTCFullYear() + '-01-01';
-    const thisYearEnd = now.getUTCFullYear() + '-12-31';
-    const today = now.getUTCFullYear() + '-' + String(now.getUTCMonth() + 1).padStart(2, '0') + '-' + String(now.getUTCDate()).padStart(2, '0');
+    const lastMonth = prev.getUTCFullYear() + "-" + String(prev.getUTCMonth() + 1).padStart(2, "0");
+    const thisYearStart = now.getUTCFullYear() + "-01-01";
+    const thisYearEnd = now.getUTCFullYear() + "-12-31";
     const patch = { quick: key };
-    if (key === 'thisMonth') {
-      patch.timeMode = 'month';
+    if (key === "thisMonth") {
+      patch.timeMode = "month";
       patch.filterMonth = thisMonth;
-      patch.filterDateStart = '';
-      patch.filterDateEnd = '';
+      patch.filterDateStart = "";
+      patch.filterDateEnd = "";
       patch.tempMonth = thisMonth;
-      patch.timeDisplay = '本月';
-    } else if (key === 'lastMonth') {
-      patch.timeMode = 'month';
+      patch.timeDisplay = "本月";
+    } else if (key === "lastMonth") {
+      patch.timeMode = "month";
       patch.filterMonth = lastMonth;
-      patch.filterDateStart = '';
-      patch.filterDateEnd = '';
+      patch.filterDateStart = "";
+      patch.filterDateEnd = "";
       patch.tempMonth = lastMonth;
-      patch.timeDisplay = '上月';
-    } else if (key === 'thisYear') {
-      patch.timeMode = 'range';
-      patch.filterMonth = '';
+      patch.timeDisplay = "上月";
+    } else if (key === "thisYear") {
+      patch.timeMode = "range";
+      patch.filterMonth = "";
       patch.filterDateStart = thisYearStart;
       patch.filterDateEnd = thisYearEnd;
       patch.tempDateStart = thisYearStart;
       patch.tempDateEnd = thisYearEnd;
-      patch.timeDisplay = '今年';
-    } else if (key === 'all') {
-      patch.timeMode = 'all';
-      patch.filterMonth = '';
-      patch.filterDateStart = '';
-      patch.filterDateEnd = '';
-      patch.timeDisplay = '全部时间';
-    } else if (key === 'customMonth') {
-      patch.quick = '';
-      patch.timeMode = 'month';
+      patch.timeDisplay = "今年";
+    } else if (key === "all") {
+      patch.timeMode = "all";
+      patch.filterMonth = "";
+      patch.filterDateStart = "";
+      patch.filterDateEnd = "";
+      patch.timeDisplay = "全部时间";
+    } else if (key === "customMonth") {
+      patch.quick = "custom";
+      patch.timeMode = "month";
       if (!this.data.tempMonth) patch.tempMonth = thisMonth;
       this.setData(patch);
       return;
-    } else if (key === 'customRange') {
-      patch.quick = '';
-      patch.timeMode = 'range';
-      if (!this.data.tempDateStart) patch.tempDateStart = thisMonth + '-01';
-      if (!this.data.tempDateEnd) patch.tempDateEnd = today;
+    } else if (key === "customRange") {
+      patch.quick = "custom";
+      patch.timeMode = "range";
+      if (!this.data.tempDateStart) patch.tempDateStart = thisMonth + "-01";
+      if (!this.data.tempDateEnd) patch.tempDateEnd = now.getUTCFullYear() + "-" + String(now.getUTCMonth() + 1).padStart(2, "0") + "-" + String(now.getUTCDate()).padStart(2, "0");
       this.setData(patch);
       return;
     }
     this.setData(patch);
   },
-
   onTempMonthChange(e) {
     const value = e.detail.value;
-    const [y, m] = value.split('-');
     this.setData({
       tempMonth: value,
-      quick: '',
-      timeMode: 'month',
+      quick: "custom",
+      timeMode: "month",
       filterMonth: value,
-      filterDateStart: '',
-      filterDateEnd: '',
-      timeDisplay: y + '年' + Number(m) + '月'
+      filterDateStart: "",
+      filterDateEnd: "",
+      timeDisplay: this._formatMonth(value)
     });
   },
-
-  onTempStartChange(e) { this.setData({ tempDateStart: e.detail.value, quick: '' }); },
-  onTempEndChange(e) { this.setData({ tempDateEnd: e.detail.value, quick: '' }); },
-
+  onTempStartChange(e) { this.setData({ tempDateStart: e.detail.value, quick: "custom" }); },
+  onTempEndChange(e) { this.setData({ tempDateEnd: e.detail.value, quick: "custom" }); },
   confirmTimeSheet() {
-    if (this.data.timeMode === 'range') {
-      const start = this.data.tempDateStart;
-      const end = this.data.tempDateEnd;
-      if (!start || !end) { wx.showToast({ title: '请选择完整日期', icon: 'none' }); return; }
-      if (start > end) { wx.showToast({ title: '开始日期不能晚于结束日期', icon: 'none' }); return; }
-      this.setData({
-        filterMonth: '',
-        filterDateStart: start,
-        filterDateEnd: end,
-        timeDisplay: start + ' ~ ' + end,
-        quick: 'custom',
-        showTimeSheet: false
-      });
-    } else if (this.data.timeMode === 'month') {
-      const month = this.data.tempMonth;
-      if (!month) { wx.showToast({ title: '请选择月份', icon: 'none' }); return; }
-      const now = new Date(Date.now() + 8 * 60 * 60 * 1000);
-      const thisMonth = now.getUTCFullYear() + '-' + String(now.getUTCMonth() + 1).padStart(2, '0');
-      const prev = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
-      const lastMonth = prev.getUTCFullYear() + '-' + String(prev.getUTCMonth() + 1).padStart(2, '0');
-      const [y, m] = month.split('-');
-      this.setData({
-        filterMonth: month,
-        filterDateStart: '',
-        filterDateEnd: '',
-        quick: month === thisMonth ? 'thisMonth' : (month === lastMonth ? 'lastMonth' : 'custom'),
-        timeDisplay: month === thisMonth ? '本月' : (month === lastMonth ? '上月' : (y + '年' + Number(m) + '月')),
-        showTimeSheet: false
-      });
-    } else {
-      this.setData({
-        filterMonth: '', filterDateStart: '', filterDateEnd: '',
-        quick: 'all', timeDisplay: '全部时间', showTimeSheet: false
-      });
+    const { timeMode, tempMonth, tempDateStart, tempDateEnd } = this.data;
+    const patch = { showTimeSheet: false };
+    if (timeMode === "month" && tempMonth) {
+      patch.filterMonth = tempMonth;
+      patch.filterDateStart = "";
+      patch.filterDateEnd = "";
+      patch.timeDisplay = this._formatMonth(tempMonth);
+    } else if (timeMode === "range" && (tempDateStart || tempDateEnd)) {
+      if (tempDateStart && tempDateEnd && tempDateStart > tempDateEnd) {
+        wx.showToast({ title: "开始日期不能晚于结束日期", icon: "none" });
+        return;
+      }
+      patch.filterMonth = "";
+      patch.filterDateStart = tempDateStart || "";
+      patch.filterDateEnd = tempDateEnd || "";
+      patch.timeDisplay = (tempDateStart || "*") + " ~ " + (tempDateEnd || "*");
     }
+    this.setData(patch);
+  },
+  _formatMonth(month) {
+    const [year, mon] = String(month || "").split("-");
+    return year && mon ? year + "年" + Number(mon) + "月" : "全部时间";
   },
 
   // ========== 分类 ==========
-  _buildCategoryGroups(categories, filterType, selectedName, selectedLevel) {
-    const activeName = selectedName !== undefined ? selectedName : this.data.filterCategory;
-    const activeLevel = selectedLevel !== undefined ? selectedLevel : this.data.filterCategoryLevel;
-    const groups = [];
-    (categories || []).forEach((parent) => {
-      if (filterType && parent.type !== filterType) return;
-      const parentActive = activeName === parent.name && activeLevel === 'category1';
+  _buildCategoryGroups(selectedIds) {
+    const selected = selectedIds || [];
+    const buildOne = (parent) => {
       const children = (parent.children || []).map((child) => ({
+        id: child.id,
         name: child.name,
-        icon: child.icon || '📝',
-        type: parent.type,
-        label: parent.name + ' · ' + child.name,
-        active: activeName === child.name && activeLevel === 'category2'
+        icon: child.icon || "📝",
+        active: selected.indexOf(child.id) >= 0
       }));
-      if (children.length) {
-        groups.push({
-          name: parent.name,
-          icon: parent.icon || '📂',
-          type: parent.type,
-          typeLabel: parent.type === 'income' ? '收入' : '支出',
-          active: parentActive,
-          children
-        });
-      }
+      if (!children.length) return null;
+      const activeCount = children.filter((child) => child.active).length;
+      return {
+        id: parent.id,
+        name: parent.name,
+        icon: parent.icon || "📂",
+        type: parent.type,
+        typeLabel: parent.type === "income" ? "收入" : "支出",
+        active: activeCount === children.length,
+        children
+      };
+    };
+    const expense = [];
+    const income = [];
+    (this.data.allCategories || []).forEach((parent) => {
+      const group = buildOne(parent);
+      if (!group) return;
+      if (parent.type === "income") income.push(group);
+      else expense.push(group);
     });
-    return groups;
+    return { expense, income };
   },
-
   openCategorySheet() {
     this.setData({
       showCategorySheet: true,
-      visibleCategoryGroups: this._buildCategoryGroups(this.data.categories, this.data.filterType)
+      tempCategoryIds: [...this.data.selectedCategoryIds],
+      categoryGroups: this._buildCategoryGroups(this.data.selectedCategoryIds)
     });
   },
-  closeCategorySheet() { this.setData({ showCategorySheet: false }); },
-
-  selectCategory(e) {
-    const name = e.currentTarget.dataset.name || '';
-    const type = e.currentTarget.dataset.type || '';
-    if (!name) {
-      this.setData({
-        filterCategory: '',
-        filterCategoryType: '',
-        filterCategoryLevel: '',
-        categoryDisplay: '全部',
-        visibleCategoryGroups: this._buildCategoryGroups(this.data.categories, this.data.filterType, '', ''),
-        showCategorySheet: false
-      });
+  closeCategorySheet() {
+    this.setData({ showCategorySheet: false });
+  },
+  selectAllCategories() {
+    const all = this.data.allCategoryIds;
+    const isAll = all.length > 0 && this.data.tempCategoryIds.length === all.length;
+    const next = isAll ? [] : [...all];
+    this.setData({ tempCategoryIds: next, categoryGroups: this._buildCategoryGroups(next) });
+  },
+  toggleParentCategory(e) {
+    const id = e.currentTarget.dataset.id;
+    const parent = this.data.allCategories.find((item) => item.id === id);
+    if (!parent || !parent.children || !parent.children.length) return;
+    const childIds = parent.children.map((child) => child.id);
+    const allSelected = childIds.every((childId) => this.data.tempCategoryIds.indexOf(childId) >= 0);
+    const next = allSelected
+      ? this.data.tempCategoryIds.filter((childId) => childIds.indexOf(childId) < 0)
+      : Array.from(new Set(this.data.tempCategoryIds.concat(childIds)));
+    this.setData({ tempCategoryIds: next, categoryGroups: this._buildCategoryGroups(next) });
+  },
+  toggleChildCategory(e) {
+    const id = e.currentTarget.dataset.id;
+    const next = this.data.tempCategoryIds.indexOf(id) >= 0
+      ? this.data.tempCategoryIds.filter((item) => item !== id)
+      : this.data.tempCategoryIds.concat(id);
+    this.setData({ tempCategoryIds: next, categoryGroups: this._buildCategoryGroups(next) });
+  },
+  confirmCategorySheet() {
+    if (this.data.tempCategoryIds.length === 0) {
+      wx.showToast({ title: "请至少选择一个分类", icon: "none" });
       return;
     }
-    const level = e.currentTarget.dataset.level || 'category2';
-    const patch = {
-      filterCategory: name,
-      filterCategoryType: type,
-      filterCategoryLevel: level,
-      categoryDisplay: name,
+    this.setData({
+      selectedCategoryIds: this.data.tempCategoryIds,
       showCategorySheet: false
-    };
-    if (type) {
-      patch.filterType = type;
-      patch.typeIndex = type === 'income' ? 2 : 1;
-      patch.typeDisplay = type === 'income' ? '收入' : '支出';
-    }
-    patch.visibleCategoryGroups = this._buildCategoryGroups(this.data.categories, patch.filterType || this.data.filterType, name, level);
-    this.setData(patch);
+    });
+    this._refreshDisplays();
   },
 
-  // ========== 账户 ==========
-  onAccountChange(event) {
-    const index = Number(event.detail.value);
+  // ========== 行内多选 ==========
+  toggleAccountPanel() {
     this.setData({
-      accountIndex: index,
-      filterAccount: index === 0 ? '' : this.data.accountOptions[index],
-      accountDisplay: index === 0 ? '全部' : this.data.accountOptions[index]
+      showAccountPanel: !this.data.showAccountPanel,
+      showTypePanel: false,
+      showMemberPanel: false
     });
   },
-
-  // ========== 流水类型 ==========
-  onTypeChange(event) {
-    const index = Number(event.detail.value);
-    const filterType = this.data.typeValues[index];
-    const patch = {
-      typeIndex: index,
-      filterType,
-      typeDisplay: this.data.typeOptions[index]
-    };
-    if (this.data.filterCategory && this.data.filterCategoryType && this.data.filterCategoryType !== filterType) {
-      patch.filterCategory = '';
-      patch.filterCategoryType = '';
-      patch.filterCategoryLevel = '';
-      patch.categoryDisplay = '全部';
-    }
-    patch.visibleCategoryGroups = this._buildCategoryGroups(
-      this.data.categories,
-      filterType,
-      patch.filterCategory !== undefined ? patch.filterCategory : this.data.filterCategory,
-      patch.filterCategoryLevel !== undefined ? patch.filterCategoryLevel : this.data.filterCategoryLevel
-    );
-    this.setData(patch);
-  },
-
-  // ========== 成员 ==========
-  onMemberChange(event) {
-    const index = Number(event.detail.value);
-    const label = index === 0 ? '全部' : this.data.memberOptions[index];
+  toggleTypePanel() {
     this.setData({
-      memberIndex: index,
-      filterMember: this.data.memberValues[index],
-      filterMemberLabel: label,
-      memberDisplay: label
+      showTypePanel: !this.data.showTypePanel,
+      showAccountPanel: false,
+      showMemberPanel: false
     });
   },
+  toggleMemberPanel() {
+    this.setData({
+      showMemberPanel: !this.data.showMemberPanel,
+      showAccountPanel: false,
+      showTypePanel: false
+    });
+  },
+  toggleAccount(e) {
+    this._toggleList("selectedAccountIds", e.currentTarget.dataset.id, "selectedAccountMap");
+  },
+  toggleType(e) {
+    this._toggleList("selectedTypes", e.currentTarget.dataset.id, "selectedTypeMap");
+  },
+  toggleMember(e) {
+    this._toggleList("selectedMemberIds", e.currentTarget.dataset.id, "selectedMemberMap");
+  },
+  _toggleList(listKey, id, mapKey) {
+    const list = this.data[listKey];
+    const next = list.indexOf(id) >= 0 ? list.filter((item) => item !== id) : list.concat(id);
+    this.setData({ [listKey]: next, [mapKey]: this._boolMap(next) });
+    this._refreshDisplays();
+  },
 
-  // ========== 商家 ==========
-  onMerchantInput(e) { this.setData({ merchant: (e.detail.value || '').trim() }); },
-
-  // ========== 金额 ==========
+  // ========== 其他筛选 ==========
+  onMerchantInput(e) { this.setData({ merchant: (e.detail.value || "").trim() }); },
   onMinAmountInput(e) { this.setData({ minAmount: e.detail.value }); },
-  onMinAmountBlur(e) { this._validateAmount('minAmount', e.detail.value); },
+  onMinAmountBlur(e) { this._validateAmount("minAmount", e.detail.value); },
   onMaxAmountInput(e) { this.setData({ maxAmount: e.detail.value }); },
-  onMaxAmountBlur(e) { this._validateAmount('maxAmount', e.detail.value); },
+  onMaxAmountBlur(e) { this._validateAmount("maxAmount", e.detail.value); },
   _validateAmount(field, raw) {
-    const v = (raw || '').trim();
-    if (v && !/^(?:0|[1-9]\d{0,6})(?:\.\d{1,2})?$/.test(v)) {
-      wx.showToast({ title: '请输入有效金额', icon: 'none' });
-      this.setData({ [field]: '' });
+    const value = (raw || "").trim();
+    if (value && !/^(?:0|[1-9]\d{0,6})(?:\.\d{1,2})?$/.test(value)) {
+      wx.showToast({ title: "请输入有效金额", icon: "none" });
+      this.setData({ [field]: "" });
     } else {
-      this.setData({ [field]: v });
+      this.setData({ [field]: value });
     }
   },
+  onRemarkInput(e) { this.setData({ remark: (e.detail.value || "").slice(0, 50) }); },
 
-  // ========== 备注 ==========
-  onRemarkInput(e) { this.setData({ remark: (e.detail.value || '').slice(0, 50) }); },
-
-  // ========== 重置 ==========
+  // ========== 重置 / 确定 ==========
   onReset() {
     const now = new Date(Date.now() + 8 * 60 * 60 * 1000);
-    const thisMonth = now.getUTCFullYear() + '-' + String(now.getUTCMonth() + 1).padStart(2, '0');
+    const thisMonth = now.getUTCFullYear() + "-" + String(now.getUTCMonth() + 1).padStart(2, "0");
     this.setData({
       filterMonth: thisMonth,
-      filterDateStart: '',
-      filterDateEnd: '',
-      timeMode: 'month',
-      quick: 'thisMonth',
+      filterDateStart: "",
+      filterDateEnd: "",
+      timeMode: "month",
+      quick: "thisMonth",
       tempMonth: thisMonth,
-      timeDisplay: '本月',
-      filterCategory: '',
-      filterCategoryType: '',
-      filterCategoryLevel: '',
-      categoryDisplay: '全部',
-      filterAccount: '',
-      accountDisplay: '全部',
-      accountIndex: 0,
-      filterType: '',
-      typeDisplay: '全部',
-      typeIndex: 0,
-      filterMember: '',
-      filterMemberLabel: '',
-      memberDisplay: '全部',
-      memberIndex: 0,
-      merchant: '',
-      minAmount: '',
-      maxAmount: '',
-      remark: '',
-      visibleCategoryGroups: this._buildCategoryGroups(this.data.categories, '', '', '')
+      tempDateStart: "",
+      tempDateEnd: "",
+      timeDisplay: "本月",
+      selectedCategoryIds: [...this.data.allCategoryIds],
+      selectedAccountIds: this.data.accountList.map((account) => account._id),
+      selectedTypes: ["expense", "income"],
+      selectedMemberIds: this.data.memberList.map((member) => member.memberId),
+      showAccountPanel: false,
+      showTypePanel: false,
+      showMemberPanel: false,
+      merchant: "",
+      minAmount: "",
+      maxAmount: "",
+      remark: ""
     });
+    this._syncMaps();
+    this._refreshDisplays();
   },
 
-  // ========== 确定 ==========
   onConfirm() {
     const min = parseFloat(this.data.minAmount);
     const max = parseFloat(this.data.maxAmount);
     if (!isNaN(min) && !isNaN(max) && min > max) {
-      wx.showToast({ title: '最低金额不能大于最高金额', icon: 'none' });
+      wx.showToast({ title: "最低金额不能大于最高金额", icon: "none" });
+      return;
+    }
+    if (this.data.selectedCategoryIds.length === 0) {
+      wx.showToast({ title: "请至少选择一个分类", icon: "none" });
+      return;
+    }
+    if (this.data.selectedAccountIds.length === 0) {
+      wx.showToast({ title: "请至少选择一个账户", icon: "none" });
+      return;
+    }
+    if (this.data.selectedTypes.length === 0) {
+      wx.showToast({ title: "请至少选择一个流水类型", icon: "none" });
+      return;
+    }
+    if (this.data.selectedMemberIds.length === 0) {
+      wx.showToast({ title: "请至少选择一个成员", icon: "none" });
       return;
     }
     const pages = getCurrentPages();
@@ -451,26 +523,25 @@ Page({
   },
 
   _buildResult() {
-    const result = {};
+    const result = {
+      selectedCategoryIds: this.data.selectedCategoryIds,
+      selectedAccountIds: this.data.selectedAccountIds,
+      selectedMemberIds: this.data.selectedMemberIds,
+      selectedTypes: this.data.selectedTypes,
+      merchant: this.data.merchant,
+      minAmount: this.data.minAmount,
+      maxAmount: this.data.maxAmount,
+      remark: this.data.remark
+    };
     if (this.data.filterDateStart || this.data.filterDateEnd) {
       result.filterDateStart = this.data.filterDateStart;
       result.filterDateEnd = this.data.filterDateEnd;
-      result.filterMonth = '';
+      result.filterMonth = "";
     } else {
       result.filterMonth = this.data.filterMonth;
-      result.filterDateStart = '';
-      result.filterDateEnd = '';
+      result.filterDateStart = "";
+      result.filterDateEnd = "";
     }
-    result.filterCategory = this.data.filterCategory;
-    result.filterCategoryLevel = this.data.filterCategoryLevel;
-    result.filterAccount = this.data.filterAccount;
-    result.filterType = this.data.filterType;
-    result.filterMember = this.data.filterMember;
-    result.filterMemberLabel = this.data.filterMemberLabel;
-    result.merchant = this.data.merchant;
-    result.minAmount = this.data.minAmount;
-    result.maxAmount = this.data.maxAmount;
-    result.remark = this.data.remark;
     return result;
   }
 });

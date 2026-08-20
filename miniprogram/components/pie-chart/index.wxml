@@ -1,0 +1,2 @@
+<canvas type="2d" id="pieCanvas" class="pie-canvas" bindtouchstart="onTouch"></canvas>
+<view wx:if="{{slices.length === 0 && categoryCount === 0}}" class="pie-empty">暂无数据</view>

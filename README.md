@@ -162,12 +162,42 @@ cd family-ledger-miniprogram
 
 ## 文档
 
+**业务规则与产品需求**
 - [需求基线.md](./需求基线.md)：已确认业务规则，最高优先级参考
 - [需求文档.md](./需求文档.md)：产品需求详情
 
+**开发计划**
+- [家庭记账本_MVP开发计划与高标准验收目标.md](./家庭记账本_MVP开发计划与高标准验收目标.md)：V1.0 MVP 计划（已完成代码）
+- [家庭记账本_V1.1_发布计划与验收目标.md](./家庭记账本_V1.1_发布计划与验收目标.md)：**当前版本 V1.1 发布计划**（Phase 7-11）
+
+**部署与验收**
+- [云开发部署与验收清单.md](./云开发部署与验收清单.md)：V1.0 时代的部署清单（参考用）
+- [PHASE_8_DEPLOY.md](./PHASE_8_DEPLOY.md)：**V1.1 Phase 8 部署操作清单**（11 集合 + 13 索引 + 3 云函数）
+- [PHASE_9_E2E.md](./PHASE_9_E2E.md)：**V1.1 Phase 9 真实数据联调**（18 场景验收）
+- [PHASE_10_DEVICE.md](./PHASE_10_DEVICE.md)：**V1.1 Phase 10 真机走查**（3 设备 + 8 类场景）
+- [PHASE_11_RELEASE.md](./PHASE_11_RELEASE.md)：**V1.1 Phase 11 发版收尾**（复跑 + Release Notes + commit/tag）
+- [ECHARTS_OPTIMIZATION.md](./ECHARTS_OPTIMIZATION.md)：**V1.2 优化资料**（ECharts 1MB 替换方案，5 选 1）
+- [V1.2_CANDIDATES.md](./V1.2_CANDIDATES.md)：**V1.2 候选功能清单**（10 项暂缓功能 + 进入条件）
+
 ## 当前状态
 
-项目持续开发中，核心页面、云函数和基础能力已接入。
+**V1.1 发布候选（Phase 7-11）**
+
+| Phase | 状态 | 任务 |
+|---|---|---|
+| Phase 7 发布前代码清理 | ✅ 完成 | 主包 1880 KB < 2MB / 63 项测试全绿 / 12 步 verify 全绿 |
+| Phase 8 云端部署 | ⏳ 待用户执行 | 11 集合 + 13 索引 + 3 云函数 + 上传小程序代码 |
+| Phase 9 真实数据联调 | ⏳ 待用户执行 | 18 场景（初始化/邀请/权限/导入/统计/并发） |
+| Phase 10 真机视觉与图表 | ⏳ 待用户执行 | iPhone / 小屏 Android / 大屏 Android |
+| Phase 11 发版候选 | 📋 清单就绪 | 复跑 + Release Notes + 仓库侧动作（见 PHASE_11_RELEASE.md） |
+
+**V1.0 代码已完整**：14 个页面 + 2 个云函数（`ledgerFunctions` + `accountingFunctions`，共 49 个 action）+ 7 张品牌资源 + 1006 KB ECharts + 392 KB pages + 全套单元/契约测试。
+
+**V1.1 自动化侧全部就绪**：gen-test-xlsx 已生成可立即投入联调；`npm run verify` 12/12 + `npm test` 63/63 双绿；主包 1880 KB。**仅 Phase 8/9/10 需用户手动执行**。
+
+**V1.1 不在范围**（已明确暂缓）：通知（每日/预算/成员记账）、账单图片凭证、周期记账、账单标签、收藏置顶、排序 UI 入口。详见 `家庭记账本_V1.1_发布计划与验收目标.md` §6。
+
+**V1.2 候选已收纳**：[`V1.2_CANDIDATES.md`](./V1.2_CANDIDATES.md) 列出 10 项暂缓功能（含几千条导入 + 进度条 / ECharts 优化 / 排序 UI / 通知类 / 图片凭证 / 周期记账 / 标签 / 分类预算 / 年度账单 / 收藏置顶），进入 V1.2 需用户明确确认。V1.1 阶段**不得**偷偷启用任何暂缓功能。
 
 ## License
 

@@ -12,6 +12,7 @@
     "pages/budget/index",
     "pages/account/index",
     "pages/import/index",
+    "pages/export/index",
     "pages/logs/index",
     "pages/search/index"
   ],

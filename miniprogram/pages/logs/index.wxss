@@ -9,4 +9,3 @@
 .log-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12rpx; padding: 26rpx 28rpx; border-radius: 16rpx; background: #FFFFFF; }
 .log-label { display: block; color: #5D4037; font-size: 30rpx; }
 .log-time { display: block; margin-top: 8rpx; color: #BCAAA4; font-size: 23rpx; }
-.log-arrow { color: #FF8C42; font-size: 36rpx; }

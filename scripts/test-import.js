@@ -49,12 +49,16 @@ test("previewImport 成功并给出成员映射", async () => {
   assert.ok(result.memberMappings.some((x) => x.sourceName === "成员" && x.matched === true));
 });
 
-test("previewImport 拒绝无效日期/金额", async () => {
+test("previewImport 收集无效行不 throw，返回 invalid 列表", async () => {
   seed(); openid = "admin";
-  stubRows = [row({ 金额: "abc" })];
+  stubRows = [row({ 金额: "abc" }), row({ 日期: "无效" }), row()];
   const result = await invoke({ action: "previewImport", familyId: "famA", fileID: "file1" });
-  assert.equal(result.success, false);
-  assert.match(result.message, /日期或金额无效/);
+  assert.equal(result.success, true);
+  assert.equal(result.total, 3);
+  assert.equal(result.valid, 1);
+  assert.equal(result.invalid.length, 2);
+  assert.match(result.invalid[0].reason, /金额/);
+  assert.match(result.invalid[1].reason, /日期/);
 });
 
 test("confirmImport 非管理员被拒", async () => {
@@ -77,14 +81,14 @@ test("confirmImport 成功并自动创建缺失分类/账户", async () => {
   assert.ok(db._rows("accounts").some((a) => a.name === "现金"), "应自动创建账户");
 });
 
-test("confirmImport 重复导入按指纹跳过（去重）", async () => {
+test("confirmImport 重复导入照样写入（不去重）", async () => {
   seed(); openid = "admin"; stubRows = [row()];
   await invoke({ action: "confirmImport", familyId: "famA", fileID: "file1" });
   const again = await invoke({ action: "confirmImport", familyId: "famA", fileID: "file1" });
   assert.equal(again.success, true);
-  assert.equal(again.imported, 0);
+  assert.equal(again.imported, 1, "重复导入也应写入 1 条");
   const db = fakeCloud.database();
-  assert.equal(db._rows("bills").filter((b) => b.familyId === "famA" && !b.deleted).length, 1);
+  assert.equal(db._rows("bills").filter((b) => b.familyId === "famA" && !b.deleted).length, 2, "库内应有 2 条同款账单");
 });
 
 test("rollbackImport 仅删除该批次并清理自动创建的分类/账户", async () => {
@@ -127,4 +131,55 @@ test("confirmImport 中途失败保留 batchId 与已导入数供回滚", async 
   const rollback = await invoke({ action: "rollbackImport", familyId: "famA", batchId: result.batchId });
   assert.equal(rollback.success, true);
   assert.equal(rollback.removed, 1, "半导入批次应可回滚");
+});
+
+
+test("confirmImport 含无效行时自动过滤并返回 invalid 列表", async () => {
+  seed(); openid = "admin";
+  stubRows = [
+    row({ 日期: "2026-08-01 12:00", 金额: "20.00" }),
+    row({ 日期: "2026-08-02 12:00", 金额: "abc", 二级分类: "午餐" }),
+    row({ 日期: "无效日期", 金额: "30.00" }),
+    row({ 日期: "2026-08-04 12:00", 金额: "40.00", 商家: "X".repeat(51) }),
+    row({ 日期: "2026-08-05 12:00", 金额: "50.00" })
+  ];
+  const result = await invoke({ action: "confirmImport", familyId: "famA", fileID: "file1" });
+  assert.equal(result.success, true);
+  assert.equal(result.imported, 2, "应只导入 2 条有效账单");
+  assert.equal(result.invalid.length, 3, "应报告 3 条无效（金额/日期/分类 各 1）");
+  assert.equal(result.invalid[0].rowNumber, 3, "第 3 行金额无效（Excel 行号 = index + 2）");
+  assert.match(result.invalid[0].reason, /金额/);
+  assert.equal(result.invalid[1].rowNumber, 4, "第 4 行日期无效");
+  assert.match(result.invalid[1].reason, /日期/);
+  assert.equal(result.invalid[2].rowNumber, 5, "第 5 行商家超长");
+  assert.match(result.invalid[2].reason, /商家/);
+});
+
+test("confirmImport 全部行无效时拒绝", async () => {
+  seed(); openid = "admin";
+  stubRows = [row({ 金额: "abc" }), row({ 日期: "无效" })];
+  const result = await invoke({ action: "confirmImport", familyId: "famA", fileID: "file1" });
+  assert.equal(result.success, false);
+  assert.match(result.message, /全部.*行均无效/);
+});
+
+test("confirmImport 100 条账单能在合理时间内完成（批量并发优化）", async () => {
+  seed(); openid = "admin";
+  const rows = [];
+  for (let i = 0; i < 100; i += 1) {
+    rows.push(row({
+      日期: "2026-08-" + String((i % 28) + 1).padStart(2, "0") + " 12:00",
+      金额: String(10 + i) + ".00",
+      商家: "shop" + i,
+      备注: ""
+    }));
+  }
+  stubRows = rows;
+  const start = Date.now();
+  const result = await invoke({ action: "confirmImport", familyId: "famA", fileID: "file1" });
+  const duration = Date.now() - start;
+  assert.equal(result.success, true);
+  assert.equal(result.imported, 100);
+  console.log("  100 条账单批量导入耗时: " + duration + "ms");
+  assert.ok(duration < 10000, "100 条账单应在 10s 内完成（实测 " + duration + "ms）");
 });

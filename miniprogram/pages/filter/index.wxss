@@ -63,6 +63,9 @@
   color: #ccc;
   flex-shrink: 0;
 }
+.filter-arrow.up {
+  transform: rotate(90deg);
+}
 
 .amount-row {
   padding: 24rpx 32rpx;
@@ -181,7 +184,14 @@
   flex: 1;
   min-height: 0;
   height: 0;
-  padding: 0 32rpx;
+  padding: 16rpx 32rpx;
+}
+.cat-section-title {
+  font-size: 24rpx;
+  color: #8D6E63;
+  font-weight: 600;
+  padding: 8rpx 8rpx 12rpx;
+  letter-spacing: 1rpx;
 }
 .cat-all {
   display: flex;
@@ -210,14 +220,11 @@
   display: flex;
   align-items: center;
   gap: 10rpx;
-  padding-bottom: 16rpx;
-  border-bottom: 1rpx solid #F5EFE6;
 }
 .cat-group-head.active .cat-group-name { color: #FF6B35; }
 .cat-group-icon { font-size: 32rpx; }
-.cat-group-name { font-size: 28rpx; font-weight: 600; color: #5D4037; }
+.cat-group-name { font-size: 28rpx; font-weight: 600; color: #5D4037; flex: 1; }
 .cat-group-type {
-  margin-left: auto;
   font-size: 20rpx;
   padding: 2rpx 12rpx;
   border-radius: 16rpx;
@@ -229,6 +236,8 @@
   flex-wrap: wrap;
   gap: 16rpx;
   padding-top: 16rpx;
+  margin-top: 16rpx;
+  border-top: 1rpx solid #F5EFE6;
 }
 .cat-child {
   display: flex;
@@ -251,6 +260,60 @@
   color: #BCAAA4;
   font-size: 26rpx;
   padding: 60rpx 0;
+}
+.cat-sheet-footer,
+.time-sheet-footer {
+  display: flex;
+  gap: 24rpx;
+  padding: 16rpx 32rpx 32rpx;
+}
+.cat-btn-cancel,
+.time-btn-cancel {
+  flex: 1;
+  height: 84rpx;
+  line-height: 84rpx;
+  text-align: center;
+  font-size: 30rpx;
+  color: #8D6E63;
+  background: #FFFFFF;
+  border-radius: 42rpx;
+}
+.cat-btn-confirm,
+.time-btn-confirm {
+  flex: 2;
+  height: 84rpx;
+  line-height: 84rpx;
+  text-align: center;
+  font-size: 30rpx;
+  color: #fff;
+  background: linear-gradient(135deg, #FF8C42 0%, #FF6B35 100%);
+  border-radius: 42rpx;
+}
+
+.chip-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+  padding: 20rpx 32rpx 24rpx;
+  background: #FFF8EC;
+  border-bottom: 1rpx solid #F5EFE6;
+}
+.chip {
+  padding: 14rpx 32rpx;
+  background: #fff;
+  color: #5D4037;
+  border-radius: 32rpx;
+  font-size: 26rpx;
+}
+.chip.active {
+  background: linear-gradient(135deg, #FF8C42 0%, #FF6B35 100%);
+  color: #fff;
+  font-weight: 600;
+}
+.chip-empty {
+  color: #BCAAA4;
+  font-size: 26rpx;
+  padding: 12rpx 0;
 }
 
 /* 时间选择弹层 */
@@ -300,29 +363,3 @@
 }
 .range-row picker { flex: 1; }
 .range-sep { font-size: 26rpx; color: #B0A094; }
-
-.time-sheet-footer {
-  display: flex;
-  gap: 24rpx;
-  padding: 16rpx 32rpx 32rpx;
-}
-.time-btn-cancel {
-  flex: 1;
-  height: 84rpx;
-  line-height: 84rpx;
-  text-align: center;
-  font-size: 30rpx;
-  color: #8D6E63;
-  background: #FFFFFF;
-  border-radius: 42rpx;
-}
-.time-btn-confirm {
-  flex: 2;
-  height: 84rpx;
-  line-height: 84rpx;
-  text-align: center;
-  font-size: 30rpx;
-  color: #fff;
-  background: #FF8C42;
-  border-radius: 42rpx;
-}

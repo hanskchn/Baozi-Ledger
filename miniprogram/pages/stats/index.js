@@ -1,85 +1,34 @@
-import * as echarts from "../../ec-canvas/echarts";
 const { debounce } = require("../../utils/perf");
 
 const app = getApp();
 
 const STATS_CACHE_TTL_MS = 60 * 1000;
-let pieChart;
-let trendChart;
-let pieData = [];
-let trendData = [];
 
 const chartColors = ["#FF8C42", "#F6B84C", "#E5784B", "#C96B45", "#A98254", "#E9A968"];
-
-const updatePieChart = () => {
-  if (!pieChart) return;
-  pieChart.clear();
-  pieChart.setOption({
-    color: chartColors,
-    tooltip: { trigger: "item", formatter: "{b}\n¥{c} ({d}%)" },
-    series: [{
-      type: "pie",
-      radius: ["44%", "70%"],
-      center: ["50%", "50%"],
-      avoidLabelOverlap: true,
-      label: { color: "#6B5145", fontSize: 11, formatter: "{b} {d}%" },
-      labelLine: { length: 8, length2: 7, lineStyle: { color: "#C9B5A8" } },
-      data: pieData
-    }]
-  });
-};
-
-const updateTrendChart = () => {
-  if (!trendChart) return;
-  trendChart.clear();
-  trendChart.setOption({
-    color: ["#FF6B35", "#4CAF50"],
-    tooltip: { trigger: "axis", formatter: (params) => params.map((item) => item.marker + item.seriesName + " ¥" + Number(item.value || 0).toFixed(2)).join("\n") },
-    legend: { data: ["支出", "收入"], top: 2, right: 0, textStyle: { color: "#8D6E63", fontSize: 11 } },
-    grid: { left: 10, right: 12, top: 36, bottom: 20, containLabel: true },
-    xAxis: { type: "category", boundaryGap: false, data: trendData.map((item) => item.label), axisLine: { lineStyle: { color: "#E8DDD1" } }, axisTick: { show: false }, axisLabel: { color: "#A58D80", fontSize: 10 } },
-    yAxis: { type: "value", minInterval: 1, axisLabel: { color: "#A58D80", fontSize: 10, formatter: (value) => "¥" + value }, splitLine: { lineStyle: { color: "#F2E9E0", type: "dashed" } }, axisLine: { show: false }, axisTick: { show: false } },
-    series: [
-      { name: "支出", type: "line", smooth: true, showSymbol: trendData.length <= 7, symbolSize: 6, lineStyle: { width: 2 }, areaStyle: { color: "rgba(255,107,53,0.12)" }, data: trendData.map((item) => item.expense) },
-      { name: "收入", type: "line", smooth: true, showSymbol: trendData.length <= 7, symbolSize: 6, lineStyle: { width: 2 }, areaStyle: { color: "rgba(76,175,80,0.10)" }, data: trendData.map((item) => item.income) }
-    ]
-  });
-};
-
-const initPieChart = (canvas, width, height, dpr) => {
-  pieChart = echarts.init(canvas, null, { width, height, devicePixelRatio: dpr });
-  canvas.setChart(pieChart);
-  updatePieChart();
-  return pieChart;
-};
-
-const initTrendChart = (canvas, width, height, dpr) => {
-  console.log("[trend] init size", width, height, "trendDataLen", trendData.length);
-  trendChart = echarts.init(canvas, null, { width, height, devicePixelRatio: dpr });
-  canvas.setChart(trendChart);
-  updateTrendChart();
-  return trendChart;
-};
+const COLORS_EXPENSE = ["#FF8C42", "#F6B84C", "#E5784B", "#C96B45", "#A98254", "#E9A968", "#D96A23", "#7BA585", "#9F7AEA", "#5B8FF9"];
+const COLORS_INCOME = ["#4CAF50", "#66BB6A", "#81C784", "#A5D6A7", "#43A047", "#7CB342", "#388E3C", "#2E7D32", "#9CCC65", "#AED581"];
 
 Page({
-  data: { currentMonth: "", currentYear: "", dateStart: "", dateEnd: "", tempDateStart: "", tempDateEnd: "", showDateRangePicker: false, periodMode: "month", displayMonth: "", monthExpense: "0.00", monthIncome: "0.00", monthBalance: "0.00", expenseCategoryStats: [], incomeCategoryStats: [], categoryStats: [], dailyTrend: [], chartType: "expense", maxTrend: 1, loading: true, members: [], accounts: [], memberOptions: ["全部成员"], accountOptions: ["全部账户"], memberPickerIndex: 0, accountPickerIndex: 0, filterMember: "", filterMemberLabel: "", filterAccount: "", loadedFamilyId: "", pieEc: { onInit: initPieChart }, trendEc: { onInit: initTrendChart } },
+  data: { currentMonth: "", dateStart: "", dateEnd: "", tempMonth: "", tempDateStart: "", tempDateEnd: "", showTimeSheet: false, periodMode: "month", timeMode: "month", quick: "thisMonth", displayMonth: "", monthExpense: "0.00", monthIncome: "0.00", monthBalance: "0.00", expenseCategoryStats: [], incomeCategoryStats: [], categoryStats: [], dailyTrend: [], categorySlicesForChart: [], chartType: "expense", chartMode: "pie", loading: true, members: [], accounts: [], memberOptions: ["全部成员"], accountOptions: ["全部账户"], memberPickerIndex: 0, accountPickerIndex: 0, filterMember: "", filterMemberLabel: "", filterAccount: "", loadedFamilyId: "" },
   onLoad() {
     const shifted = new Date(Date.now() + 8 * 60 * 60 * 1000);
     const month = shifted.getUTCFullYear() + "-" + String(shifted.getUTCMonth() + 1).padStart(2, "0");
-    this.setData({ currentMonth: month, currentYear: String(shifted.getUTCFullYear()), displayMonth: shifted.getUTCFullYear() + "年" + (shifted.getUTCMonth() + 1) + "月" });
+    this.setData({ currentMonth: month, displayMonth: shifted.getUTCFullYear() + "年" + (shifted.getUTCMonth() + 1) + "月", tempMonth: month, quick: "thisMonth", timeMode: "month" });
     this._debouncedLoadStats = debounce(() => this.loadStats(), 200);
   },
   buildStatsCacheKey() {
     const familyId = app.globalData.currentFamilyId;
     if (!familyId) return null;
     let period = this.data.currentMonth;
-    if (this.data.periodMode === "year") period = this.data.currentYear;
-    else if (this.data.periodMode === "custom") period = this.data.dateStart + "_" + this.data.dateEnd;
+    if (this.data.periodMode === "custom") period = this.data.dateStart + "_" + this.data.dateEnd;
+    else if (this.data.periodMode === "all") period = "all";
     const filterObj = {
       periodMode: this.data.periodMode,
       period,
       filterMember: this.data.filterMember,
-      filterAccount: this.data.filterAccount
+      filterAccount: this.data.filterAccount,
+      chartType: this.data.chartType,
+      chartMode: this.data.chartMode
     };
     const filterKey = Object.keys(filterObj).sort().map((k) => k + "=" + (filterObj[k] || "")).join("|");
     return `stats:${familyId}:${filterKey}`;
@@ -102,19 +51,21 @@ Page({
         try { cached = wx.getStorageSync(cacheKey); } catch (error) { cached = null; }
         if (cached && cached.payload && Date.now() - cached.ts < STATS_CACHE_TTL_MS) {
           const p = cached.payload;
-          pieData = p.pieData;
-          trendData = p.trendData;
           this.setData({
             monthExpense: p.monthExpense, monthIncome: p.monthIncome, monthBalance: p.monthBalance,
             expenseCategoryStats: p.expense, incomeCategoryStats: p.income, categoryStats: p.categories,
-            dailyTrend: p.trend, maxTrend: p.maxTrend
-          }, () => { updatePieChart(); updateTrendChart(); });
+            dailyTrend: p.trend
+          });
           return;
         }
       }
       const data = { action: "getStats", familyId: app.globalData.currentFamilyId };
-      if (this.data.periodMode === "year") data.year = this.data.currentYear;
-      else if (this.data.periodMode === "custom") { data.dateStart = this.data.dateStart; data.dateEnd = this.data.dateEnd; }
+      if (this.data.periodMode === "all") {
+        data.allTime = true;
+        // 兜底：部分云函数版本未识别 allTime，用宽 dateRange 兼容
+        data.dateStart = data.dateStart || "0000-01-01";
+        data.dateEnd = data.dateEnd || "9999-12-31";
+      } else if (this.data.periodMode === "custom") { data.dateStart = this.data.dateStart; data.dateEnd = this.data.dateEnd; }
       else data.month = this.data.currentMonth;
       data.memberId = this.data.filterMember;
       data.account = this.data.filterAccount;
@@ -123,12 +74,19 @@ Page({
       const stats = response.result;
       const expense = stats.expenseCategoryStats || stats.categoryStats || [];
       const income = stats.incomeCategoryStats || [];
-      const categories = this.decorateCategories(this.data.chartType === "expense" ? expense : income);
-      const trend = (stats.dailyTrend || []).map((item) => ({ ...item, label: item.date.slice(8, 10) }));
-      const maxTrend = Math.max(1, ...trend.map((item) => Math.max(Number(item.expense), Number(item.income))));
-      pieData = categories.map((item) => ({ value: Number(item.amount || 0), name: item.name }));
-      trendData = trend;
-      this.setData({ monthExpense: Number(stats.totalExpense || 0).toFixed(2), monthIncome: Number(stats.totalIncome || 0).toFixed(2), monthBalance: Number(stats.balance || 0).toFixed(2), expenseCategoryStats: expense, incomeCategoryStats: income, categoryStats: categories, dailyTrend: trend, maxTrend }, () => { updatePieChart(); updateTrendChart(); });
+      const categories = this.decorateCategories(this.data.chartType === "expense" ? expense : income, this.data.chartType);
+      // 趋势图三档自适应（避免长跨度下 x 轴过密 / label 重叠）
+      //   日数据 ≤ 60  → 按日，label "M/D"
+      //   61 ~ 730    → 按月，label "M月"
+      //   > 730       → 按年，label "YYYY年"
+      const rawDaily = stats.dailyTrend || [];
+      const trend = rawDaily.length > 730
+        ? this._aggregateTrendByYear(rawDaily)
+        : rawDaily.length > 60
+          ? this._aggregateTrendByMonth(rawDaily)
+          : rawDaily.map((item) => ({ ...item, label: Number(item.date.slice(5, 7)) + "/" + Number(item.date.slice(8, 10)) }));
+      const newSlices = this.groupForPie(this.data.chartType === "expense" ? expense : income);
+      this.setData({ monthExpense: Number(stats.totalExpense || 0).toFixed(2), monthIncome: Number(stats.totalIncome || 0).toFixed(2), monthBalance: Number(stats.balance || 0).toFixed(2), expenseCategoryStats: expense, incomeCategoryStats: income, categoryStats: categories, dailyTrend: trend, categorySlicesForChart: newSlices });
       // 写缓存
       if (cacheKey) {
         try {
@@ -136,7 +94,7 @@ Page({
             ts: Date.now(),
             payload: {
               monthExpense: this.data.monthExpense, monthIncome: this.data.monthIncome, monthBalance: this.data.monthBalance,
-              expense, income, categories, trend, maxTrend, pieData: pieData.slice(), trendData: trendData.slice()
+              expense, income, categories, trend
             }
           });
         } catch (storageError) {
@@ -160,45 +118,177 @@ Page({
       filterMember: "", filterMemberLabel: "", filterAccount: "", memberPickerIndex: 0, accountPickerIndex: 0,
       monthExpense: "0.00", monthIncome: "0.00", monthBalance: "0.00",
       expenseCategoryStats: [], incomeCategoryStats: [], categoryStats: [], dailyTrend: [],
+      categorySlicesForChart: [],
       loading: true, loadedFamilyId: newFamilyId
     });
-    pieData = [];
-    trendData = [];
     this.loadOptions().then(() => this.loadStats({ forceRefresh: true })).catch(() => {});
   },
 
-  decorateCategories(items) { const total = items.reduce((sum, item) => sum + Number(item.amount || 0), 0); return items.map((item) => ({ ...item, displayAmount: Number(item.amount || 0).toFixed(2), percent: total ? Math.max(1, Math.round(item.amount / total * 100)) : 0 })); },
-  switchMonth(event) { if (this.data.periodMode !== "month") return; const delta = Number(event.currentTarget.dataset.delta); const parts = this.data.currentMonth.split("-").map(Number); const next = new Date(parts[0], parts[1] - 1 + delta, 1); this.setData({ currentMonth: next.getFullYear() + "-" + String(next.getMonth() + 1).padStart(2, "0"), displayMonth: next.getFullYear() + "年" + (next.getMonth() + 1) + "月" }); this._debouncedLoadStats(); },
-  selectPeriod() { wx.showActionSheet({ itemList: ["按月", "按年", "自定义日期范围"], success: (result) => { if (result.tapIndex === 0) { this.setData({ periodMode: "month", displayMonth: this.data.currentMonth.replace("-", "年") + "月" }); this._debouncedLoadStats(); return; } if (result.tapIndex === 1) { const year = this.data.currentYear; this.setData({ periodMode: "year", displayMonth: year + "年" }); this._debouncedLoadStats(); return; } this.openDateRangePicker(); } }); },
+  // 给分类列表加 percent / displayAmount / color（不分组，rank 列表保持完整）
+  decorateCategories(items, scheme) {
+    const total = items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    if (!total) return [];
+    const COLORS = scheme === "income" ? COLORS_INCOME : COLORS_EXPENSE;
+    return items.map((item, i) => ({
+      ...item,
+      displayAmount: Number(item.amount || 0).toFixed(2),
+      percent: Math.max(1, Math.round(Number(item.amount || 0) / total * 100)),
+      color: COLORS[i % COLORS.length]
+    }));
+  },
+  // 仅给饼图用：扇区上限 MAX_SLICES - 1 + 「其他」
+  // 1) Top TOP_N 一定显示
+  // 2) Top 之外、占比 >= MIN_PERCENT 的中间档也单独显示（避免被吞）
+  // 3) Top 之外、占比 < MIN_PERCENT 的尾部合并为「其他」
+  // rank 列表仍用 decorateCategories 全量，避免「其他」点了查不到账
+  groupForPie(items) {
+    const total = items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    if (!total) return [];
+    const TOP_N = 6;
+    const MAX_SLICES = 10;
+    const MIN_PERCENT = 2;
+    const sorted = items.slice().sort((a, b) => Number(b.amount) - Number(a.amount));
+    const top = sorted.slice(0, TOP_N);
+    const middle = sorted.slice(TOP_N).filter((item) => Number(item.amount) / total * 100 >= MIN_PERCENT);
+    const tail = sorted.slice(TOP_N).filter((item) => Number(item.amount) / total * 100 < MIN_PERCENT);
+    // 合并 top + middle，超过 MAX_SLICES - 1 时把多余的挤进 tail
+    const shown = top.concat(middle);
+    const kept = shown.slice(0, MAX_SLICES - 1);
+    const overflow = shown.slice(MAX_SLICES - 1).concat(tail);
+    const result = kept.map((item) => ({ name: item.name, value: Number(item.amount), icon: item.icon || '' }));
+    if (overflow.length > 0) {
+      const overflowValue = overflow.reduce((s, x) => s + Number(x.amount || 0), 0);
+      if (overflowValue > 0) result.push({ name: "其他", value: overflowValue });
+    }
+    return result;
+  },
+  changePeriod(e) {
+    if (this.data.periodMode !== "month") return;
+    const delta = Number(e.currentTarget.dataset.delta);
+    const [year, mon] = this.data.currentMonth.split("-").map(Number);
+    const next = new Date(Date.UTC(year, mon - 1 + delta, 1));
+    const newMonth = next.getUTCFullYear() + "-" + String(next.getUTCMonth() + 1).padStart(2, "0");
+    this._applyTime({ periodMode: "month", currentMonth: newMonth, displayMonth: this._formatMonth(newMonth), quick: "custom", timeMode: "month" });
+  },
+  openTimeSheet() {
+    this.setData({
+      showTimeSheet: true,
+      tempMonth: this.data.currentMonth || this._thisMonthString(),
+      tempDateStart: this.data.dateStart,
+      tempDateEnd: this.data.dateEnd,
+      timeMode: this.data.periodMode === "custom" ? "range" : "month"
+    });
+  },
+  closeTimeSheet() { this.setData({ showTimeSheet: false }); },
+  stopPropagation() {},
+  selectQuick(e) {
+    const key = e.currentTarget.dataset.key;
+    const now = new Date(Date.now() + 8 * 60 * 60 * 1000);
+    const y = now.getUTCFullYear();
+    const thisMonth = this._thisMonthString();
+    const prev = new Date(Date.UTC(y, now.getUTCMonth() - 1, 1));
+    const lastMonth = prev.getUTCFullYear() + "-" + String(prev.getUTCMonth() + 1).padStart(2, "0");
+    if (key === "thisMonth") {
+      this._applyTime({ periodMode: "month", currentMonth: thisMonth, displayMonth: this._formatMonth(thisMonth), dateStart: "", dateEnd: "", quick: "thisMonth", timeMode: "month" });
+      this.closeTimeSheet();
+    } else if (key === "lastMonth") {
+      this._applyTime({ periodMode: "month", currentMonth: lastMonth, displayMonth: this._formatMonth(lastMonth), dateStart: "", dateEnd: "", quick: "lastMonth", timeMode: "month" });
+      this.closeTimeSheet();
+    } else if (key === "thisYear") {
+      this._applyTime({ periodMode: "custom", currentMonth: "", displayMonth: y + "年", dateStart: y + "-01-01", dateEnd: y + "-12-31", quick: "thisYear", timeMode: "range" });
+      this.closeTimeSheet();
+    } else if (key === "all") {
+      this._applyTime({ periodMode: "all", currentMonth: "", displayMonth: "全部时间", dateStart: "", dateEnd: "", quick: "all", timeMode: "month" });
+      this.closeTimeSheet();
+    } else if (key === "customMonth") {
+      this.setData({ quick: "custom", timeMode: "month" });
+    } else if (key === "customRange") {
+      const today = this.getShanghaiDate();
+      this.setData({ quick: "custom", timeMode: "range", tempDateStart: this.data.tempDateStart || this.data.currentMonth + "-01" || today, tempDateEnd: this.data.tempDateEnd || today });
+    }
+  },
+  onTempMonthChange(e) {
+    const value = e.detail.value;
+    this._applyTime({ periodMode: "month", currentMonth: value, displayMonth: this._formatMonth(value), dateStart: "", dateEnd: "", quick: "custom", timeMode: "month" });
+  },
+  onTempStartChange(e) {
+    const value = e.detail.value;
+    this.setData({ tempDateStart: value, quick: "custom", timeMode: "range" });
+    if (this.data.tempDateEnd) {
+      this._applyTime({ periodMode: "custom", currentMonth: "", displayMonth: this._formatRange(value, this.data.tempDateEnd), dateStart: value, dateEnd: this.data.tempDateEnd, quick: "custom", timeMode: "range" });
+      this.closeTimeSheet();
+    }
+  },
+  onTempEndChange(e) {
+    const value = e.detail.value;
+    this.setData({ tempDateEnd: value, quick: "custom", timeMode: "range" });
+    if (this.data.tempDateStart) {
+      this._applyTime({ periodMode: "custom", currentMonth: "", displayMonth: this._formatRange(this.data.tempDateStart, value), dateStart: this.data.tempDateStart, dateEnd: value, quick: "custom", timeMode: "range" });
+      this.closeTimeSheet();
+    }
+  },
+  _applyTime(patch) {
+    this.setData(patch);
+    this._debouncedLoadStats();
+  },
+  _thisMonthString() {
+    const now = new Date(Date.now() + 8 * 60 * 60 * 1000);
+    return now.getUTCFullYear() + "-" + String(now.getUTCMonth() + 1).padStart(2, "0");
+  },
+  _aggregateTrendByMonth(daily) {
+    const buckets = {};
+    daily.forEach((item) => {
+      const ym = item.date.slice(0, 7);
+      if (!buckets[ym]) buckets[ym] = { date: ym + "-01", expense: 0, income: 0 };
+      buckets[ym].expense += Number(item.expense || 0);
+      buckets[ym].income += Number(item.income || 0);
+    });
+    return Object.values(buckets)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map((item) => ({ ...item, label: Number(item.date.slice(5, 7)) + "月" }));
+  },
+  _aggregateTrendByYear(daily) {
+    const buckets = {};
+    daily.forEach((item) => {
+      const y = item.date.slice(0, 4);
+      if (!buckets[y]) buckets[y] = { date: y + "-01-01", expense: 0, income: 0 };
+      buckets[y].expense += Number(item.expense || 0);
+      buckets[y].income += Number(item.income || 0);
+    });
+    return Object.values(buckets)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map((item) => ({ ...item, label: item.date.slice(0, 4) + "年" }));
+  },
+  _formatMonth(month) {
+    if (!month) return "全部时间";
+    const [y, m] = month.split("-");
+    return y + "年" + Number(m) + "月";
+  },
+  _formatRange(start, end) {
+    const fmt = (d) => {
+      if (!d) return "";
+      const [y, m, day] = d.split("-");
+      return Number(y) + "年" + Number(m) + "月" + Number(day) + "日";
+    };
+    const shortFmt = (d) => {
+      if (!d) return "";
+      const [, m, day] = d.split("-");
+      return Number(m) + "月" + Number(day) + "日";
+    };
+    if (!start && !end) return "全部时间";
+    if (start && end && start === end) return fmt(start);
+    if (start && end && start.substring(0, 4) === end.substring(0, 4)) {
+      return start.substring(0, 4) + "年" + shortFmt(start) + " ~ " + shortFmt(end);
+    }
+    if (start && end) return fmt(start) + " ~ " + fmt(end);
+    return fmt(start) || fmt(end);
+  },
   getShanghaiDate() {
     const d = new Date(Date.now() + 8 * 60 * 60 * 1000);
     const pad = (v) => String(v).padStart(2, "0");
     return d.getUTCFullYear() + "-" + pad(d.getUTCMonth() + 1) + "-" + pad(d.getUTCDate());
   },
 
-  openDateRangePicker() {
-    const today = this.getShanghaiDate();
-    const start = this.data.dateStart || this.data.currentMonth + "-01";
-    const end = this.data.dateEnd || today;
-    this.setData({ tempDateStart: start, tempDateEnd: end, showDateRangePicker: true });
-  },
-  closeDateRangePicker() { this.setData({ showDateRangePicker: false }); },
-  onTempStartChange(e) { this.setData({ tempDateStart: e.detail.value }); },
-  onTempEndChange(e) { this.setData({ tempDateEnd: e.detail.value }); },
-  confirmDateRange() {
-    const dateStart = this.data.tempDateStart;
-    const dateEnd = this.data.tempDateEnd;
-    if (!dateStart || !dateEnd) { wx.showToast({ title: "请选择完整日期", icon: "none" }); return; }
-    if (dateStart > dateEnd) { wx.showToast({ title: "开始日期不能晚于结束日期", icon: "none" }); return; }
-    this.setData({
-      periodMode: "custom",
-      dateStart,
-      dateEnd,
-      displayMonth: dateStart + " 至 " + dateEnd,
-      showDateRangePicker: false
-    });
-    this._debouncedLoadStats();
-  },
   onMemberChange(event) {
     const index = Number(event.detail.value);
     const member = index > 0 ? (this.data.members || [])[index - 1] : null;
@@ -218,9 +308,19 @@ Page({
     });
     this._debouncedLoadStats();
   },
-  switchChartType(event) { const chartType = event.currentTarget.dataset.type; const categoryStats = this.decorateCategories(chartType === "expense" ? this.data.expenseCategoryStats : this.data.incomeCategoryStats); pieData = categoryStats.map((item) => ({ value: Number(item.amount || 0), name: item.name })); this.setData({ chartType, categoryStats }, () => updatePieChart()); },
-  onCategoryTap(event) {
-    const name = event.currentTarget.dataset.name;
+  switchChartType(event) {
+    const chartType = event.currentTarget.dataset.type;
+    const source = chartType === "expense" ? this.data.expenseCategoryStats : this.data.incomeCategoryStats;
+    const categoryStats = this.decorateCategories(source, chartType);
+    const newSlices = this.groupForPie(source);
+    this.setData({ chartType, categoryStats, categorySlicesForChart: newSlices });
+  },
+  switchChartMode(event) {
+    const chartMode = event.currentTarget.dataset.mode;
+    if (chartMode === this.data.chartMode) return;
+    this.setData({ chartMode });
+  },
+  _navigateToCategory(name) {
     if (!name) return;
     const filter = {
       filterCategory: name,
@@ -233,19 +333,22 @@ Page({
       filterDateEnd: "",
       merchant: "", minAmount: "", maxAmount: "", remark: ""
     };
-    if (this.data.periodMode === "year") {
-      filter.filterDateStart = this.data.currentYear + "-01-01";
-      filter.filterDateEnd = this.data.currentYear + "-12-31";
-    } else if (this.data.periodMode === "custom") {
+    if (this.data.periodMode === "custom") {
       filter.filterDateStart = this.data.dateStart;
       filter.filterDateEnd = this.data.dateEnd;
+    } else if (this.data.periodMode === "all") {
+      // 全部时间：不过滤日期
     } else {
       filter.filterMonth = this.data.currentMonth;
     }
     app.globalData.pendingBillsFilter = filter;
     wx.switchTab({ url: "/pages/bills/index" });
   },
-  renderTrendChart() { updateTrendChart(); },
-  onUnload() { if (pieChart) { pieChart.dispose(); pieChart = null; } if (trendChart) { trendChart.dispose(); trendChart = null; } },
-  trendHeight(amount) { return Math.max(8, Math.round(Number(amount || 0) / this.data.maxTrend * 160)); }
+  onCategoryTap(event) {
+    this._navigateToCategory(event.currentTarget.dataset.name);
+  },
+  onPieTap(event) {
+    this._navigateToCategory(event.detail && event.detail.name);
+  },
+
 });

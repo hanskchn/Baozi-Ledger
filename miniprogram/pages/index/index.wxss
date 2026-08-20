@@ -39,7 +39,7 @@
   white-space: nowrap;
   font-size: 32rpx;
   font-weight: 600;
-  color: #333;
+  color: #5D4037;
 }
 .family-role {
   flex-shrink: 0;
@@ -58,6 +58,34 @@
   color: #4CAF50;
 }
 
+.family-name-tap {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  padding: 4rpx 12rpx;
+  margin: -4rpx -12rpx;
+  border-radius: 10rpx;
+}
+.family-name-tap.family-name-tap-hover {
+  background: #F5EFE6;
+}
+.family-name-tap .family-name {
+  flex: 1;
+  min-width: 0;
+}
+.family-edit {
+  flex-shrink: 0;
+  width: 32rpx;
+  height: 32rpx;
+  margin-left: 10rpx;
+  opacity: 0.7;
+  transition: opacity 0.15s ease;
+}
+.family-name-tap.family-name-tap-hover .family-edit {
+  opacity: 1;
+}
+
 .family-switch {
   font-size: 26rpx;
   color: #FF8C42;
@@ -67,7 +95,7 @@
   display: flex;
   flex-wrap: wrap;
   background: #fff;
-  margin: 16rpx 24rpx;
+  margin: 16rpx 24rpx 0;
   padding: 32rpx 0;
   border-radius: 20rpx;
   box-shadow: 0 4rpx 16rpx rgba(93, 64, 55, 0.08);
@@ -169,7 +197,7 @@
 }
 
 .section {
-  margin: 0 24rpx;
+  margin: 32rpx 24rpx 0;
 }
 
 .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16rpx; }
@@ -263,97 +291,95 @@
 
 /* 预算卡片 */
 .budget-card {
-  margin: 20rpx 24rpx 0;
-  padding: 20rpx 24rpx;
+  margin: 20rpx 24rpx 24rpx;
+  padding: 24rpx 28rpx;
   background: #fff;
-  border-radius: 16rpx;
-  box-shadow: 0 2rpx 12rpx rgba(93, 64, 55, 0.06);
+  border-radius: 20rpx;
+  box-shadow: 0 4rpx 16rpx rgba(93, 64, 55, 0.08);
 }
 
 .budget-card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12rpx;
+  margin-bottom: 16rpx;
 }
 
 .budget-card-label {
-  font-size: 24rpx;
-  color: #B0A094;
-}
-
-.budget-card-arrow {
   font-size: 28rpx;
-  color: #C9B5A8;
-}
-
-.budget-card-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12rpx;
-}
-
-.budget-amount {
-  font-size: 30rpx;
   font-weight: 600;
   color: #5D4037;
 }
 
-.budget-expense {
-  font-size: 24rpx;
-  color: #E54545;
+.budget-card-arrow {
+  font-size: 32rpx;
+  color: #BCAAA4;
 }
 
-.budget-remain {
-  font-size: 24rpx;
-  color: #4CAF50;
+.budget-card-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 16rpx;
 }
 
-.budget-remain.over {
-  color: #E54545;
+.budget-amount {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: #5D4037;
 }
+
+.budget-status {
+  font-size: 26rpx;
+  font-weight: 600;
+}
+
+.budget-status.ok { color: #4CAF50; }
+.budget-status.warning { color: #F4511E; }
+.budget-status.over { color: #D32F2F; }
 
 .budget-progress {
-  position: relative;
-  height: 10rpx;
-  background: #F5EBDD;
-  border-radius: 5rpx;
+  height: 20rpx;
+  background: #F5EDE2;
+  border-radius: 10rpx;
   overflow: hidden;
 }
 
 .budget-progress-fill {
   height: 100%;
-  background: #FF8C42;
-  border-radius: 5rpx;
-  transition: width 0.3s ease;
+  border-radius: 10rpx;
+  background: linear-gradient(90deg, #FFB74D, #FF8C42);
+  transition: width 0.4s ease;
 }
 
 .budget-progress-fill.warning {
-  background: #FF6B35;
+  background: linear-gradient(90deg, #FF8C42, #F4511E);
 }
 
 .budget-progress-fill.over {
-  background: #E54545;
+  background: linear-gradient(90deg, #E57373, #D32F2F);
+}
+
+.budget-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 10rpx;
+}
+
+.budget-expense {
+  font-size: 24rpx;
+  color: #8D6E63;
 }
 
 .budget-percent {
-  display: block;
-  font-size: 22rpx;
-  color: #B0A094;
-  margin-top: 8rpx;
-  text-align: right;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #8D6E63;
 }
 
-.budget-card-empty {
-  padding: 16rpx 0 8rpx;
-}
-
-.budget-empty-text {
-  font-size: 26rpx;
-  color: #FF8C42;
-  font-weight: 500;
-}
+.budget-percent.warning { color: #F4511E; }
+.budget-percent.over { color: #D32F2F; }
 .fab { position: fixed; right: 40rpx; bottom: 150rpx; width: 112rpx; height: 112rpx; line-height: 108rpx; text-align: center; border-radius: 50%; background: #FF8C42; color: #FFF; font-size: 56rpx; box-shadow: 0 8rpx 28rpx rgba(255, 140, 66, .35); z-index: 10; }
 .sheet-mask { position: fixed; inset: 0; background: rgba(0, 0, 0, .25); z-index: 20; }
 .family-sheet { position: fixed; left: 0; right: 0; bottom: 0; padding: 28rpx 32rpx calc(28rpx + env(safe-area-inset-bottom)); background: #FFFFFF; border-radius: 28rpx 28rpx 0 0; z-index: 21; }

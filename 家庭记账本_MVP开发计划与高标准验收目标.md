@@ -542,3 +542,93 @@
 | 云端联调未执行 | 分页/聚合/导出/预算/解散事务/导入中断逻辑仅静态推理 | 部署后按部署清单双账号验收，并用真实随手记 xlsx 验证导入 |
 | ECharts Canvas 未验证 | 统计页已接入 ec-canvas，未在开发者工具或真机确认 | 部署后用开发者工具和真机检查 |
 | 真机视觉未验证 | 品牌插画与 Logo 需在真机确认清晰度、裁切与安全区；覆盖刘海屏、小屏 Android、键盘顶起 | 品牌资源落地后做完整真机走查 |
+
+---
+
+## 2026-08-18 进度记录：基于代码逻辑的功能完整性核验
+
+> 本次更新为基于代码逻辑的逐项核对（不涉及云端部署、双账号联调或真机验收），不标记 MVP 完成。
+
+### 已完成（代码层面）
+
+**Phase 0 基础收敛与数据安全**
+- 云函数 `ledgerFunctions` 16 个 action + `accountingFunctions` 33 个 action 已全部就位（详见 `handlers` 列表）。
+- 前端 `app.js` / 所有页面统一使用 `{ ...data, action }` 调用，未发现 `wx.cloud.database` 直连。
+- 金额分存储、双端校验（`parseAmountCents` / `parseOptionalAmountCents`）、版本号冲突拒绝、软删除、Asia/Shanghai 时区工具、初始化幂等锁、邀请码 7 天有效 + 撤销/再生效逻辑均在代码内闭环。
+
+**Phase 1 统一视觉系统与品牌资源**
+- `miniprogram/app.wxss` 已落地设计令牌（`--primary #FF8C42` / 暖色 `#FFF8EC` / 收入 `#4CAF50` / 支出 `#FF6B35`）。
+- `miniprogram/images/brand/` 7 张品牌资源全部就位：`bun-logo.png` / `empty-bills.png` / `welcome-guide.png` / `search-empty.png` / `import-empty.png` / `import-done.png` / `network-error.png`。
+- `utils/brand.js` 清单 `available=true`，首页/导入/搜索/网络错误页等均接入品牌资源并有降级文案。
+
+**Phase 2 首页与核心记账闭环**
+- 首页：自定义品牌导航、账本切换底部选择器、2×2 概览卡（今日/本月 支出/收入/结余）、预算卡（合并到 `getHomeSummary`）、日期分组最近 10 条账单、下拉刷新、欢迎引导、首次左滑提示。
+- 记账表单 `pages/addBill/index.js`：金额/分类/账户/成员/日期/商家/备注字段校验、分类/账户记忆（`getBillPreferences` / `saveBillPreferences`）、连续记账、自动恢复 `memberId`。
+- 账单详情 `pages/billDetail/index`：编辑跳表单、删除二次确认、`canOperate` 控制按钮可用性。
+
+**Phase 3 家庭协作与账本设置**
+- `pages/family/index`：多账本创建/切换/重命名、成员管理、退出/移除、管理员转让、邀请码生成/撤销/分享、50 人上限、退出需先转让。
+- `pages/profile/index`：昵称修改、`chooseAvatar` 头像上传、注销账号（先处理未转让/未解散账本）。
+- `pages/category/index`：一级/二级分类增改停删、Emoji 图标选择、停用后历史账单继续显示、最后一个二级不可删。
+- `pages/account/index`：账户增改删/停用、未使用物理删除、已使用停用。
+
+**Phase 4 账单、搜索与统计**
+- 账单分页 20/页、滚动到底加载更多、首页 10 条最近账单、按月/自定义日期范围、筛选缓存、左右滑删除。
+- 筛选 `pages/filter/index`：时间（本月/上月/今年/全部/月份/范围）、分类（一/二级）、账户、成员、类型、金额区间、商家关键词、备注关键词。
+- 搜索 `pages/search/index`：备注/商家/分类/成员模糊匹配，带 350ms 防抖。
+- 统计 `pages/stats/index`：按月/按年/自定义范围 + 支出/收入分类占比饼图 + 每日趋势折线图（ECharts `ec-canvas`）+ 成员/账户过滤 + 缓存。
+- 预算 `pages/budget/index`：月份切换（左右箭头 + 月份 picker）、未保存提示、复制上月、删除、当前月/未来月区分。
+
+**Phase 5 导入、导出与审计**
+- 导入 `pages/import/index`：选文件 → 上传云存储 → `previewImport` 预览 → `confirmImport` 写入 → `rollbackImport` 撤销；中途失败回滚（`batchId` + `imported` 透传）。
+- 导出：`exportBills` 按筛选/全部生成 xlsx → `cloud.uploadFile` → `getTempFileURL` 短时链接 → 客户端 `wx.openDocument`。
+- 操作记录 `pages/logs/index`：按动作分组（账单/导入导出/账户/分类/家庭）、操作人筛选、日期范围筛选、分页 20/页。
+- 全部账单/账本级写操作通过 `addOperationLogInTransaction` 写入 `operation_logs` 集合（含解散/邀请/管理员转让/成员加入退出）。
+
+### 已发现但未完成的代码层小缺口
+
+| 缺口 | 影响 | 处理建议 |
+|---|---|---|
+| 账单排序 UI 入口缺失：`listBills` 服务端已支持 `dateDesc / amountAsc / amountDesc`，但 `pages/filter/index` 没有"排序"控件，仅默认 `dateDesc` | 需求基线 §12 要求"按日期倒序 / 按金额升序或降序"可切换，金额排序暂不可用 | 在 `pages/filter/index` 加一个 `picker` 控件（3 选项），透传 `sort` 给 `listBills`；约 10 行改动 |
+
+### 仍需外部验收（不属于代码任务）
+
+| 事项 | 说明 | 触发条件 |
+|---|---|---|
+| 云函数上传部署 | `ledgerFunctions` / `accountingFunctions` 需在微信开发者工具右键「上传并部署：云端安装依赖」（`accountingFunctions` 含 `xlsx` 依赖） | 部署前 `accountingFunctions` 目录需 `npm install` |
+| 云数据库集合 + 索引 | 11 个集合（users / families / family_members / family_invites / categories / accounts / bills / budgets / bill_preferences / operation_logs / initialization_locks）需在云开发控制台创建并设「仅创建者可读写」；按 `云开发部署与验收清单.md` §2 建立 13 条索引 | 首次部署前 |
+| 双账号真机联调 | 按 `云开发部署与验收清单.md` §3 执行 18 个场景：初始化/邀请/权限/管理员转让/账本切换/账单并发/分类账户/预算/导入导出/时区/账号注销/解散与恢复/邀请信息最小暴露/解散中断恢复/成员并发加入/遗留成员收敛/账单并发编辑/管理员转让并发 | 部署后 |
+| 真实 xlsx 导入验证 | 用随手记真实导出文件跑 预览 → 确认 → 撤销 全流程 | 部署后 |
+| ECharts Canvas 真机验证 | 统计页饼图/折线图在真机的初始化、渲染、触控 | 部署后 |
+| 真机视觉走查 | iPhone 刘海屏、小屏 Android、键盘顶起、长账本名/长昵称/长备注/大金额、空态/错误态/弱网恢复 | 品牌资源落地后做完整真机走查 |
+| 主包体积复测 | 最终发版前 `npm run verify` 复测（当前 2002KB < 2MB） | 发版前 |
+
+### 验证结果（与上次一致）
+
+| 检查项 | 结果 |
+|---|---|
+| 一键静态验收 `npm run verify`（12 步） | 通过 |
+| 单元+契约测试 `npm test`（60 项） | 通过 |
+| 品牌资源完整性 | 7 张全部存在且 RGBA 透明 |
+
+### 当前风险（未消解）
+
+| 风险 | 说明 | 建议 |
+|---|---|---|
+| **账单排序 UI 入口缺失** | 服务端 `listBills` 支持 `amountAsc/amountDesc`，但前端筛选页无"排序"控件，用户无法切换金额排序 | 在 `pages/filter/index` 加排序选择器，约 10 行改动 |
+| 云端部署版本未知 | 若云端 `ledgerFunctions` 为旧版本（`family` 不含 `memberId`），前端兜底仍无法恢复 | 需在微信开发者工具中右键重新「上传并部署」`ledgerFunctions` 与 `accountingFunctions` |
+| 云端联调未执行 | 18 个联调场景（事务/并发/权限/邀请/解散/导入）仅静态推理 | 部署后按部署清单双账号验收 |
+| ECharts Canvas 未验证 | 统计页已接入 ec-canvas，但未在开发者工具或真机确认 Canvas 初始化与图表渲染 | 部署后用开发者工具和真机检查 |
+| 真机视觉未验证 | 品牌插画与 Logo 需在真机确认清晰度、裁切与安全区；覆盖刘海屏、小屏 Android、键盘顶起、长文本布局 | 品牌资源落地后做完整真机走查 |
+
+### MVP 标记说明（V1.0 收尾状态）
+
+按既有维护规则："任何未达标项不得标记为完成"——本次进度记录**不标记 MVP 完成**。MVP 完成的标志是：以上 7 项外部验收全部通过 + 代码层排序 UI 缺口补齐 + `npm run verify` 与 `npm test` 在最终发版前再跑一次均为通过。
+
+### 后续：V1.1 发布计划
+
+V1.0 代码已完整（Phase 0-5 全部完成），剩余的"代码层排序 UI 缺口"和"7 项外部验收"已在 [V1.1 发布计划](./家庭记账本_V1.1_发布计划与验收目标.md) 中处理：
+- 排序 UI 缺口：经业务评估后**明确不做**（默认 dateDesc 覆盖 90% 场景）
+- 7 项外部验收：拆分为 Phase 8（云端部署）/ 9（真实数据联调）/ 10（真机视觉）/ 11（发版候选）
+
+最新进度：V1.1 Phase 7 已完成（主包 1880 KB < 2MB + 63 项测试全绿 + 12 步 verify 全绿），Phase 8-11 待执行。详见 [V1.1 §8 进度记录](./家庭记账本_V1.1_发布计划与验收目标.md#8-进度记录)。

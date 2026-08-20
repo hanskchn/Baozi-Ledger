@@ -1,0 +1,1 @@
+<canvas type="2d" id="trendCanvas" class="trend-canvas" bindtouchstart="onTouch" bindtouchmove="onTouch" bindtouchend="onTouchEnd"></canvas>

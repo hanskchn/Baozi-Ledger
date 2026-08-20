@@ -1,6 +1,5 @@
 <view class="page">
   <view class="filter-list">
-    <!-- 时间 -->
     <view class="filter-row" bindtap="openTimeSheet">
       <view class="filter-row-left">
         <text class="filter-icon">🕒</text>
@@ -10,53 +9,53 @@
       <text class="filter-arrow">›</text>
     </view>
 
-    <!-- 分类 -->
     <view class="filter-row" bindtap="openCategorySheet">
       <view class="filter-row-left">
         <text class="filter-icon">🏷️</text>
         <text class="filter-label">分类</text>
       </view>
-      <text class="filter-value {{filterCategory ? 'active' : ''}}">{{categoryDisplay}}</text>
+      <text class="filter-value {{selectedCategoryIds.length > 0 && selectedCategoryIds.length < allCategoryIds.length ? 'active' : ''}}">{{categoryDisplay}}</text>
       <text class="filter-arrow">›</text>
     </view>
 
-    <!-- 账户 -->
-    <picker mode="selector" range="{{accountOptions}}" value="{{accountIndex}}" bindchange="onAccountChange">
-      <view class="filter-row">
-        <view class="filter-row-left">
-          <text class="filter-icon">💳</text>
-          <text class="filter-label">账户</text>
-        </view>
-        <text class="filter-value {{filterAccount ? 'active' : ''}}">{{accountDisplay}}</text>
-        <text class="filter-arrow">›</text>
+    <view class="filter-row" bindtap="toggleAccountPanel">
+      <view class="filter-row-left">
+        <text class="filter-icon">💳</text>
+        <text class="filter-label">账户</text>
       </view>
-    </picker>
+      <text class="filter-value {{selectedAccountIds.length > 0 && selectedAccountIds.length < accountList.length ? 'active' : ''}}">{{accountDisplay}}</text>
+      <text class="filter-arrow {{showAccountPanel ? 'up' : ''}}">›</text>
+    </view>
+    <view class="chip-panel" wx:if="{{showAccountPanel}}">
+      <view wx:for="{{accountList}}" wx:key="_id" class="chip {{selectedAccountMap[item._id] ? 'active' : ''}}" data-id="{{item._id}}" catchtap="toggleAccount">{{item.name}}</view>
+      <view wx:if="{{accountList.length === 0}}" class="chip-empty">暂无账户</view>
+    </view>
 
-    <!-- 流水类型 -->
-    <picker mode="selector" range="{{typeOptions}}" value="{{typeIndex}}" bindchange="onTypeChange">
-      <view class="filter-row">
-        <view class="filter-row-left">
-          <text class="filter-icon">📊</text>
-          <text class="filter-label">流水类型</text>
-        </view>
-        <text class="filter-value {{filterType ? 'active' : ''}}">{{typeDisplay}}</text>
-        <text class="filter-arrow">›</text>
+    <view class="filter-row" bindtap="toggleTypePanel">
+      <view class="filter-row-left">
+        <text class="filter-icon">📊</text>
+        <text class="filter-label">流水类型</text>
       </view>
-    </picker>
+      <text class="filter-value {{selectedTypes.length > 0 && selectedTypes.length < typeOptions.length ? 'active' : ''}}">{{typeDisplay}}</text>
+      <text class="filter-arrow {{showTypePanel ? 'up' : ''}}">›</text>
+    </view>
+    <view class="chip-panel" wx:if="{{showTypePanel}}">
+      <view wx:for="{{typeOptions}}" wx:key="id" class="chip {{selectedTypeMap[item.id] ? 'active' : ''}}" data-id="{{item.id}}" catchtap="toggleType">{{item.name}}</view>
+    </view>
 
-    <!-- 成员 -->
-    <picker mode="selector" range="{{memberOptions}}" value="{{memberIndex}}" bindchange="onMemberChange">
-      <view class="filter-row">
-        <view class="filter-row-left">
-          <text class="filter-icon">👤</text>
-          <text class="filter-label">成员</text>
-        </view>
-        <text class="filter-value {{filterMember ? 'active' : ''}}">{{memberDisplay}}</text>
-        <text class="filter-arrow">›</text>
+    <view class="filter-row" bindtap="toggleMemberPanel">
+      <view class="filter-row-left">
+        <text class="filter-icon">👤</text>
+        <text class="filter-label">成员</text>
       </view>
-    </picker>
+      <text class="filter-value {{selectedMemberIds.length > 0 && selectedMemberIds.length < memberList.length ? 'active' : ''}}">{{memberDisplay}}</text>
+      <text class="filter-arrow {{showMemberPanel ? 'up' : ''}}">›</text>
+    </view>
+    <view class="chip-panel" wx:if="{{showMemberPanel}}">
+      <view wx:for="{{memberList}}" wx:key="memberId" class="chip {{selectedMemberMap[item.memberId] ? 'active' : ''}}" data-id="{{item.memberId}}" catchtap="toggleMember">{{item.nickName || '微信用户'}}</view>
+      <view wx:if="{{memberList.length === 0}}" class="chip-empty">暂无成员</view>
+    </view>
 
-    <!-- 商家 -->
     <view class="filter-row text-row">
       <view class="filter-row-left">
         <text class="filter-icon">🏪</text>
@@ -65,7 +64,6 @@
       <input class="text-input" placeholder="输入商家名称关键词" placeholder-class="text-input-placeholder" value="{{merchant}}" bindinput="onMerchantInput" confirm-type="search" />
     </view>
 
-    <!-- 金额 -->
     <view class="filter-row amount-row">
       <view class="filter-row-left">
         <text class="filter-icon">💰</text>
@@ -76,7 +74,6 @@
       <input class="amount-input" placeholder="最高" value="{{maxAmount}}" bindinput="onMaxAmountInput" bindblur="onMaxAmountBlur" type="digit" />
     </view>
 
-    <!-- 备注 -->
     <view class="filter-row text-row">
       <view class="filter-row-left">
         <text class="filter-icon">📝</text>
@@ -91,7 +88,6 @@
     <view class="btn-confirm" bindtap="onConfirm">确定</view>
   </view>
 
-  <!-- 分类选择弹层 -->
   <view class="cat-sheet-mask" wx:if="{{showCategorySheet}}" bindtap="closeCategorySheet"></view>
   <view class="cat-sheet" wx:if="{{showCategorySheet}}" catchtap="stopPropagation">
     <view class="cat-sheet-header">
@@ -99,37 +95,49 @@
       <text class="cat-sheet-close" bindtap="closeCategorySheet">✕</text>
     </view>
     <scroll-view scroll-y class="cat-sheet-body">
-      <view class="cat-all {{!filterCategory ? 'active' : ''}}" data-name="" bindtap="selectCategory">
+      <view class="cat-all {{tempCategoryIds.length === allCategoryIds.length ? 'active' : ''}}" bindtap="selectAllCategories">
         <text class="cat-all-icon">📂</text>
         <text>全部分类</text>
       </view>
-      <view wx:for="{{visibleCategoryGroups}}" wx:key="name" wx:for-item="group" class="cat-group">
-        <view class="cat-group-head {{group.active ? 'active' : ''}}" data-name="{{group.name}}" data-type="{{group.type}}" data-level="category1" bindtap="selectCategory">
+
+      <view wx:if="{{categoryGroups.expense.length > 0}}" class="cat-section-title">支出分类</view>
+      <view wx:for="{{categoryGroups.expense}}" wx:key="id" wx:for-item="group" class="cat-group">
+        <view class="cat-group-head {{group.active ? 'active' : ''}}" data-id="{{group.id}}" bindtap="toggleParentCategory">
           <text class="cat-group-icon">{{group.icon}}</text>
           <text class="cat-group-name">{{group.name}}{{group.active ? ' ✓' : ''}}</text>
           <text class="cat-group-type type-{{group.type}}">{{group.typeLabel}}</text>
         </view>
         <view class="cat-children">
-          <view
-            wx:for="{{group.children}}"
-            wx:key="name"
-            wx:for-item="child"
-            class="cat-child {{child.active ? 'active' : ''}}"
-            data-name="{{child.name}}"
-            data-type="{{child.type}}"
-            data-level="category2"
-            bindtap="selectCategory"
-          >
+          <view wx:for="{{group.children}}" wx:key="id" wx:for-item="child" class="cat-child {{child.active ? 'active' : ''}}" data-id="{{child.id}}" bindtap="toggleChildCategory">
             <text class="cat-child-icon">{{child.icon}}</text>
-            <text class="cat-child-name">{{child.name}}</text>
+            <text class="cat-child-name">{{child.name}}{{child.active ? ' ✓' : ''}}</text>
           </view>
         </view>
       </view>
-      <view wx:if="{{visibleCategoryGroups.length === 0}}" class="cat-empty">当前类型下暂无分类</view>
+
+      <view wx:if="{{categoryGroups.income.length > 0}}" class="cat-section-title">收入分类</view>
+      <view wx:for="{{categoryGroups.income}}" wx:key="id" wx:for-item="group" class="cat-group">
+        <view class="cat-group-head {{group.active ? 'active' : ''}}" data-id="{{group.id}}" bindtap="toggleParentCategory">
+          <text class="cat-group-icon">{{group.icon}}</text>
+          <text class="cat-group-name">{{group.name}}{{group.active ? ' ✓' : ''}}</text>
+          <text class="cat-group-type type-{{group.type}}">{{group.typeLabel}}</text>
+        </view>
+        <view class="cat-children">
+          <view wx:for="{{group.children}}" wx:key="id" wx:for-item="child" class="cat-child {{child.active ? 'active' : ''}}" data-id="{{child.id}}" bindtap="toggleChildCategory">
+            <text class="cat-child-icon">{{child.icon}}</text>
+            <text class="cat-child-name">{{child.name}}{{child.active ? ' ✓' : ''}}</text>
+          </view>
+        </view>
+      </view>
+
+      <view wx:if="{{allCategoryIds.length === 0}}" class="cat-empty">暂无分类</view>
     </scroll-view>
+    <view class="cat-sheet-footer">
+      <view class="cat-btn-cancel" bindtap="closeCategorySheet">取消</view>
+      <view class="cat-btn-confirm" bindtap="confirmCategorySheet">确定</view>
+    </view>
   </view>
 
-  <!-- 时间选择弹层 -->
   <view class="time-sheet-mask" wx:if="{{showTimeSheet}}" bindtap="closeTimeSheet"></view>
   <view class="time-sheet" wx:if="{{showTimeSheet}}" catchtap="stopPropagation">
     <view class="time-sheet-header">
@@ -143,28 +151,18 @@
         <view class="quick-chip {{quick === 'thisYear' ? 'active' : ''}}" data-key="thisYear" bindtap="selectQuick">今年</view>
         <view class="quick-chip {{quick === 'all' ? 'active' : ''}}" data-key="all" bindtap="selectQuick">全部</view>
       </view>
-
       <view class="time-section">
-        <view class="time-section-head">
-          <text class="quick-chip small {{timeMode === 'month' ? 'active' : ''}}" data-key="customMonth" bindtap="selectQuick">选择月份</text>
-        </view>
+        <view class="time-section-head"><text class="quick-chip small {{timeMode === 'month' ? 'active' : ''}}" data-key="customMonth" bindtap="selectQuick">选择月份</text></view>
         <picker wx:if="{{timeMode === 'month'}}" mode="date" fields="month" value="{{tempMonth}}" bindchange="onTempMonthChange">
           <view class="picker-field">{{tempMonth || '请选择月份'}}</view>
         </picker>
       </view>
-
       <view class="time-section">
-        <view class="time-section-head">
-          <text class="quick-chip small {{timeMode === 'range' ? 'active' : ''}}" data-key="customRange" bindtap="selectQuick">自定义范围</text>
-        </view>
+        <view class="time-section-head"><text class="quick-chip small {{timeMode === 'range' ? 'active' : ''}}" data-key="customRange" bindtap="selectQuick">自定义范围</text></view>
         <view wx:if="{{timeMode === 'range'}}" class="range-row">
-          <picker mode="date" value="{{tempDateStart}}" bindchange="onTempStartChange">
-            <view class="picker-field">{{tempDateStart || '开始日期'}}</view>
-          </picker>
+          <picker mode="date" value="{{tempDateStart}}" bindchange="onTempStartChange"><view class="picker-field">{{tempDateStart || '开始日期'}}</view></picker>
           <text class="range-sep">至</text>
-          <picker mode="date" value="{{tempDateEnd}}" bindchange="onTempEndChange">
-            <view class="picker-field">{{tempDateEnd || '结束日期'}}</view>
-          </picker>
+          <picker mode="date" value="{{tempDateEnd}}" bindchange="onTempEndChange"><view class="picker-field">{{tempDateEnd || '结束日期'}}</view></picker>
         </view>
       </view>
     </scroll-view>

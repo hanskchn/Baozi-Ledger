@@ -7,12 +7,10 @@ Page({
   data: {
     bills: [],
     filterMonth: "",
-    filterCategory: "",
-    filterCategoryLevel: "",
-    filterMember: "",
-    filterMemberLabel: "",
-    filterAccount: "",
-    filterType: "",
+    selectedCategoryIds: [],
+    selectedAccountIds: [],
+    selectedMemberIds: [],
+    selectedTypes: [],
     filterDateStart: "",
     filterDateEnd: "",
     filterMinAmount: "",
@@ -24,10 +22,15 @@ Page({
     hasActiveFilters: false,
     activeFilterCount: 0,
     periodDisplay: "",
+    showTimeSheet: false,
+    timeMode: "month",
+    quick: "thisMonth",
+    tempMonth: "",
+    tempDateStart: "",
+    tempDateEnd: "",
     categories: [],
     members: [],
     accounts: [],
-    isAdmin: false,
     offset: 0,
     hasMore: true,
     loadingMore: false,
@@ -50,11 +53,10 @@ Page({
     if (!familyId) return null;
     const filterObj = {
       month: this.data.filterMonth,
-      category: this.data.filterCategory,
-      categoryLevel: this.data.filterCategoryLevel,
-      member: this.data.filterMember,
-      account: this.data.filterAccount,
-      type: this.data.filterType,
+      categories: this.data.selectedCategoryIds,
+      accounts: this.data.selectedAccountIds,
+      members: this.data.selectedMemberIds,
+      types: this.data.selectedTypes,
       dateStart: this.data.filterDateStart,
       dateEnd: this.data.filterDateEnd,
       minAmount: this.data.filterMinAmount,
@@ -63,7 +65,7 @@ Page({
       remark: this.data.remark,
       sort: this.data.sort
     };
-    const filterKey = Object.keys(filterObj).sort().map((k) => k + "=" + (filterObj[k] || "")).join("|");
+    const filterKey = Object.keys(filterObj).sort().map((k) => k + "=" + JSON.stringify(filterObj[k])).join("|");
     return `bills:${familyId}:${filterKey}`;
   },
 
@@ -75,8 +77,7 @@ Page({
       if (pendingFilter) app.globalData.pendingBillsFilter = null;
       if (this.data.loadedFamilyId && this.data.loadedFamilyId !== familyId) {
         this.setData({
-          filterCategory: "", filterCategoryLevel: "", filterMember: "", filterMemberLabel: "",
-          filterAccount: "", filterType: "",
+          selectedCategoryIds: [], selectedAccountIds: [], selectedMemberIds: [], selectedTypes: [],
           filterDateStart: "", filterDateEnd: "",
           filterMinAmount: "", filterMaxAmount: "",
           merchant: "", remark: "", sort: "dateDesc",
@@ -84,27 +85,9 @@ Page({
         });
       }
       this.setData({ loadedFamilyId: familyId });
-      this.setData({ isAdmin: app.globalData.currentFamily?.role === "admin" });
       if (pendingFilter) {
-        const hasDateRange = !!pendingFilter.filterDateStart || !!pendingFilter.filterDateEnd;
-        this.setData({
-          filterMonth: hasDateRange ? "" : (pendingFilter.filterMonth || ""),
-          filterDateStart: pendingFilter.filterDateStart || "",
-          filterDateEnd: pendingFilter.filterDateEnd || "",
-          filterCategory: pendingFilter.filterCategory || "",
-          filterCategoryLevel: pendingFilter.filterCategoryLevel || "",
-          filterAccount: pendingFilter.filterAccount || "",
-          filterType: pendingFilter.filterType || "",
-          filterMember: pendingFilter.filterMember || "",
-          filterMemberLabel: pendingFilter.filterMemberLabel || "",
-          merchant: pendingFilter.merchant || "",
-          filterMinAmount: pendingFilter.minAmount || "",
-          filterMaxAmount: pendingFilter.maxAmount || "",
-          remark: pendingFilter.remark || "",
-          offset: 0
-        });
-        this._updateActiveFilterTags();
         await this.loadOptions();
+        this._applyFilterResult(pendingFilter);
         this._debouncedLoadBills();
         return;
       }
@@ -136,8 +119,9 @@ Page({
       })();
     } catch (error) { /* ignore */ }
     this.setData({
-      bills: [], filterCategory: "", filterCategoryLevel: "", filterMember: "", filterMemberLabel: "",
-      filterAccount: "", filterType: "", filterDateStart: "", filterDateEnd: "",
+      bills: [],
+      selectedCategoryIds: [], selectedAccountIds: [], selectedMemberIds: [], selectedTypes: [],
+      filterDateStart: "", filterDateEnd: "",
       filterMinAmount: "", filterMaxAmount: "", merchant: "", remark: "",
       sort: "dateDesc", offset: 0, hasMore: true, loadingMore: false,
       loadedFamilyId: newFamilyId
@@ -180,11 +164,7 @@ Page({
       const result = await this.callFunction("listBills", {
         familyId,
         month: this.data.filterMonth,
-        category: this.data.filterCategory,
-        categoryLevel: this.data.filterCategoryLevel,
-        memberId: this.data.filterMember,
-        account: this.data.filterAccount,
-        type: this.data.filterType,
+        ...this._buildCloudFilters(),
         dateStart: this.data.filterDateStart,
         dateEnd: this.data.filterDateEnd,
         minAmount: this.data.filterMinAmount,
@@ -239,12 +219,169 @@ Page({
     return nextYear + "-" + String(nextMonth).padStart(2, "0");
   },
 
-  onMonthPickerChange(e) {
+  openTimeSheet() {
+    const now = new Date(Date.now() + 8 * 60 * 60 * 1000);
+    const thisMonth = now.getUTCFullYear() + "-" + String(now.getUTCMonth() + 1).padStart(2, "0");
+    const hasRange = !!this.data.filterDateStart || !!this.data.filterDateEnd;
+    let quick = "custom";
+    if (hasRange) {
+      const y = now.getUTCFullYear();
+      if (this.data.filterDateStart === y + "-01-01" && this.data.filterDateEnd === y + "-12-31") quick = "thisYear";
+    } else if (this.data.filterMonth === thisMonth) quick = "thisMonth";
+    else {
+      const prev = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+      const lastMonth = prev.getUTCFullYear() + "-" + String(prev.getUTCMonth() + 1).padStart(2, "0");
+      if (this.data.filterMonth === lastMonth) quick = "lastMonth";
+      else if (!this.data.filterMonth) quick = "all";
+    }
+    this.setData({
+      showTimeSheet: true,
+      quick,
+      timeMode: hasRange ? "range" : "month",
+      tempMonth: this.data.filterMonth || thisMonth,
+      tempDateStart: this.data.filterDateStart,
+      tempDateEnd: this.data.filterDateEnd
+    });
+  },
+  closeTimeSheet() {
+    this.setData({ showTimeSheet: false });
+  },
+  stopPropagation() {},
+  selectQuick(e) {
+    const key = e.currentTarget.dataset.key;
+    const now = new Date(Date.now() + 8 * 60 * 60 * 1000);
+    const y = now.getUTCFullYear();
+    const thisMonth = y + "-" + String(now.getUTCMonth() + 1).padStart(2, "0");
+    const prev = new Date(Date.UTC(y, now.getUTCMonth() - 1, 1));
+    const lastMonth = prev.getUTCFullYear() + "-" + String(prev.getUTCMonth() + 1).padStart(2, "0");
+    if (key === "thisMonth") {
+      this._applyTime({ quick: "thisMonth", timeMode: "month", filterMonth: thisMonth, filterDateStart: "", filterDateEnd: "", tempMonth: thisMonth });
+      this.closeTimeSheet();
+    } else if (key === "lastMonth") {
+      this._applyTime({ quick: "lastMonth", timeMode: "month", filterMonth: lastMonth, filterDateStart: "", filterDateEnd: "", tempMonth: lastMonth });
+      this.closeTimeSheet();
+    } else if (key === "thisYear") {
+      this._applyTime({ quick: "thisYear", timeMode: "range", filterMonth: "", filterDateStart: y + "-01-01", filterDateEnd: y + "-12-31", tempDateStart: y + "-01-01", tempDateEnd: y + "-12-31" });
+      this.closeTimeSheet();
+    } else if (key === "all") {
+      this._applyTime({ quick: "all", timeMode: "all", filterMonth: "", filterDateStart: "", filterDateEnd: "", tempMonth: "", tempDateStart: "", tempDateEnd: "" });
+      this.closeTimeSheet();
+    } else if (key === "customMonth") {
+      this.setData({ quick: "custom", timeMode: "month" });
+    } else if (key === "customRange") {
+      this.setData({ quick: "custom", timeMode: "range" });
+    }
+  },
+  onTempMonthChange(e) {
     const value = e.detail.value;
-    if (!value) return;
-    this.setData({ filterMonth: value, filterDateStart: "", filterDateEnd: "" });
+    this.setData({ quick: "custom", timeMode: "month" });
+    this._applyTime({ filterMonth: value, filterDateStart: "", filterDateEnd: "" });
+  },
+  onTempStartChange(e) {
+    const value = e.detail.value;
+    this.setData({ quick: "custom", timeMode: "range", tempDateStart: value });
+    if (this.data.tempDateEnd) {
+      this._applyTime({ filterMonth: "", filterDateStart: value, filterDateEnd: this.data.tempDateEnd });
+      this.closeTimeSheet();
+    }
+  },
+  onTempEndChange(e) {
+    const value = e.detail.value;
+    this.setData({ quick: "custom", timeMode: "range", tempDateEnd: value });
+    if (this.data.tempDateStart) {
+      this._applyTime({ filterMonth: "", filterDateStart: this.data.tempDateStart, filterDateEnd: value });
+      this.closeTimeSheet();
+    }
+  },
+  _applyTime(patch) {
+    this.setData({ ...patch, offset: 0 });
     this._updateActiveFilterTags();
     this._debouncedLoadBills();
+  },
+
+  _resolveLegacyCategoryIds(result) {
+    if (!result.filterCategory) return [];
+    const ids = [];
+    (this.data.categories || []).forEach((parent) => {
+      const type = result.filterCategoryType || result.filterType;
+      if (type && parent.type !== type) return;
+      if (result.filterCategoryLevel === "category1" && parent.name === result.filterCategory) {
+        (parent.children || []).forEach((child) => ids.push(child.id));
+      }
+      (parent.children || []).forEach((child) => {
+        if (result.filterCategoryLevel !== "category1" && child.name === result.filterCategory) ids.push(child.id);
+      });
+    });
+    return Array.from(new Set(ids));
+  },
+
+  _normalizeFilterResult(result) {
+    const hasDateRange = !!result.filterDateStart || !!result.filterDateEnd;
+    const selectedCategoryIds = Array.isArray(result.selectedCategoryIds)
+      ? result.selectedCategoryIds
+      : this._resolveLegacyCategoryIds(result);
+    const selectedAccountIds = Array.isArray(result.selectedAccountIds)
+      ? result.selectedAccountIds
+      : (result.filterAccount ? (this.data.accounts || []).filter((account) => account.name === result.filterAccount).map((account) => account._id) : []);
+    const selectedMemberIds = Array.isArray(result.selectedMemberIds)
+      ? result.selectedMemberIds
+      : (result.filterMember ? [result.filterMember] : []);
+    const selectedTypes = Array.isArray(result.selectedTypes)
+      ? result.selectedTypes
+      : (result.filterType ? [result.filterType] : []);
+    return {
+      filterMonth: hasDateRange ? "" : (result.filterMonth || this.data.filterMonth || ""),
+      filterDateStart: result.filterDateStart || "",
+      filterDateEnd: result.filterDateEnd || "",
+      selectedCategoryIds,
+      selectedAccountIds,
+      selectedMemberIds,
+      selectedTypes,
+      merchant: result.merchant || "",
+      filterMinAmount: result.minAmount || "",
+      filterMaxAmount: result.maxAmount || "",
+      remark: result.remark || "",
+      offset: 0
+    };
+  },
+
+  _applyFilterResult(result) {
+    this.setData(this._normalizeFilterResult(result));
+    this._updateActiveFilterTags();
+  },
+
+  _buildCloudFilters() {
+    const filters = {};
+    const categoryMap = {};
+    const allCategoryIds = [];
+    (this.data.categories || []).forEach((parent) => {
+      (parent.children || []).forEach((child) => {
+        allCategoryIds.push(child.id);
+        categoryMap[child.id] = { name: child.name, type: parent.type };
+      });
+    });
+    const selectedCategoryIds = this.data.selectedCategoryIds || [];
+    if (selectedCategoryIds.length > 0 && selectedCategoryIds.length < allCategoryIds.length) {
+      filters.categories = selectedCategoryIds.map((id) => categoryMap[id]).filter(Boolean);
+    }
+
+    const accounts = this.data.accounts || [];
+    const selectedAccountIds = this.data.selectedAccountIds || [];
+    if (selectedAccountIds.length > 0 && selectedAccountIds.length < accounts.length) {
+      filters.accounts = accounts.filter((account) => selectedAccountIds.indexOf(account._id) >= 0).map((account) => account.name);
+    }
+
+    const members = this.data.members || [];
+    const selectedMemberIds = this.data.selectedMemberIds || [];
+    if (selectedMemberIds.length > 0 && selectedMemberIds.length < members.length) {
+      filters.memberIds = selectedMemberIds;
+    }
+
+    const selectedTypes = this.data.selectedTypes || [];
+    if (selectedTypes.length > 0 && selectedTypes.length < 2) {
+      filters.types = selectedTypes;
+    }
+    return filters;
   },
 
   clearFilters() {
@@ -253,8 +390,7 @@ Page({
     this.setData({
       filterMonth: thisMonth,
       filterDateStart: "", filterDateEnd: "",
-      filterCategory: "", filterCategoryLevel: "", filterAccount: "", filterType: "",
-      filterMember: "", filterMemberLabel: "",
+      selectedCategoryIds: [], selectedAccountIds: [], selectedMemberIds: [], selectedTypes: [],
       merchant: "", filterMinAmount: "", filterMaxAmount: "", remark: "",
       offset: 0
     });
@@ -265,10 +401,10 @@ Page({
   removeFilterTag(e) {
     const key = e.currentTarget.dataset.key;
     const patch = { offset: 0 };
-    if (key === "category") { patch.filterCategory = ""; patch.filterCategoryLevel = ""; }
-    else if (key === "member") { patch.filterMember = ""; patch.filterMemberLabel = ""; }
-    else if (key === "account") patch.filterAccount = "";
-    else if (key === "type") patch.filterType = "";
+    if (key === "category") patch.selectedCategoryIds = [];
+    else if (key === "member") patch.selectedMemberIds = [];
+    else if (key === "account") patch.selectedAccountIds = [];
+    else if (key === "type") patch.selectedTypes = [];
     else if (key === "merchant") patch.merchant = "";
     else if (key === "amount") { patch.filterMinAmount = ""; patch.filterMaxAmount = ""; }
     else if (key === "remark") patch.remark = "";
@@ -282,12 +418,10 @@ Page({
       "filterMonth=" + encodeURIComponent(this.data.filterMonth || ""),
       "filterDateStart=" + encodeURIComponent(this.data.filterDateStart || ""),
       "filterDateEnd=" + encodeURIComponent(this.data.filterDateEnd || ""),
-      "filterCategory=" + encodeURIComponent(this.data.filterCategory || ""),
-      "filterCategoryLevel=" + encodeURIComponent(this.data.filterCategoryLevel || ""),
-      "filterAccount=" + encodeURIComponent(this.data.filterAccount || ""),
-      "filterType=" + encodeURIComponent(this.data.filterType || ""),
-      "filterMember=" + encodeURIComponent(this.data.filterMember || ""),
-      "filterMemberLabel=" + encodeURIComponent(this.data.filterMemberLabel || ""),
+      "selectedCategoryIds=" + encodeURIComponent(JSON.stringify(this.data.selectedCategoryIds || [])),
+      "selectedAccountIds=" + encodeURIComponent(JSON.stringify(this.data.selectedAccountIds || [])),
+      "selectedMemberIds=" + encodeURIComponent(JSON.stringify(this.data.selectedMemberIds || [])),
+      "selectedTypes=" + encodeURIComponent(JSON.stringify(this.data.selectedTypes || [])),
       "merchant=" + encodeURIComponent(this.data.merchant || ""),
       "minAmount=" + encodeURIComponent(this.data.filterMinAmount || ""),
       "maxAmount=" + encodeURIComponent(this.data.filterMaxAmount || ""),
@@ -297,26 +431,30 @@ Page({
   },
 
   onFilterConfirm(result) {
-    const {
-      filterMonth, filterDateStart, filterDateEnd,
-      filterCategory, filterCategoryLevel, filterAccount, filterType,
-      filterMember, filterMemberLabel,
-      merchant, minAmount, maxAmount, remark
-    } = result;
-    this.setData({
-      filterMonth, filterDateStart, filterDateEnd,
-      filterCategory, filterCategoryLevel, filterAccount, filterType,
-      filterMember, filterMemberLabel,
-      merchant, minAmount, maxAmount, remark,
-      offset: 0
-    });
-    this._updateActiveFilterTags();
+    this._applyFilterResult(result);
     this._debouncedLoadBills();
   },
 
   _computePeriodDisplay() {
     if (this.data.filterDateStart || this.data.filterDateEnd) {
-      return (this.data.filterDateStart || "") + " ~ " + (this.data.filterDateEnd || "");
+      const start = this.data.filterDateStart || "";
+      const end = this.data.filterDateEnd || "";
+      const fmt = (d) => {
+        if (!d) return "";
+        const [y, m, day] = d.split("-");
+        return Number(y) + "年" + Number(m) + "月" + Number(day) + "日";
+      };
+      const sameYear = start && end && start.substring(0, 4) === end.substring(0, 4);
+      if (start && end && start === end) return fmt(start);
+      if (start && end && sameYear) {
+        const shortFmt = (d) => {
+          const [, m, day] = d.split("-");
+          return Number(m) + "月" + Number(day) + "日";
+        };
+        return start.substring(0, 4) + "年" + shortFmt(start) + " ~ " + shortFmt(end);
+      }
+      if (start && end) return fmt(start) + " ~ " + fmt(end);
+      return fmt(start) || fmt(end);
     }
     const month = this.data.filterMonth;
     if (/^\d{4}-\d{2}$/.test(month || "")) {
@@ -360,10 +498,22 @@ Page({
 
   _updateActiveFilterTags() {
     const tags = [];
-    if (this.data.filterCategory) tags.push({ key: "category", label: this.data.filterCategory });
-    if (this.data.filterMember) tags.push({ key: "member", label: this.data.filterMemberLabel || "成员" });
-    if (this.data.filterAccount) tags.push({ key: "account", label: this.data.filterAccount });
-    if (this.data.filterType) tags.push({ key: "type", label: this.data.filterType === "expense" ? "支出" : "收入" });
+    const categoryCount = (this.data.selectedCategoryIds || []).length;
+    const allCategoryCount = (this.data.categories || []).reduce((sum, parent) => sum + ((parent.children || []).length), 0);
+    if (categoryCount > 0 && categoryCount < allCategoryCount) tags.push({ key: "category", label: categoryCount + "个分类" });
+
+    const selectedMemberIds = this.data.selectedMemberIds || [];
+    if (selectedMemberIds.length > 0 && selectedMemberIds.length < (this.data.members || []).length) {
+      tags.push({ key: "member", label: selectedMemberIds.length + "个成员" });
+    }
+
+    const selectedAccountIds = this.data.selectedAccountIds || [];
+    if (selectedAccountIds.length > 0 && selectedAccountIds.length < (this.data.accounts || []).length) {
+      tags.push({ key: "account", label: selectedAccountIds.length + "个账户" });
+    }
+
+    const selectedTypes = this.data.selectedTypes || [];
+    if (selectedTypes.length === 1) tags.push({ key: "type", label: selectedTypes[0] === "expense" ? "支出" : "收入" });
     if (this.data.merchant) tags.push({ key: "merchant", label: this.data.merchant });
     if (this.data.filterMinAmount || this.data.filterMaxAmount) tags.push({ key: "amount", label: (this.data.filterMinAmount || "0") + "~" + (this.data.filterMaxAmount || "∞") });
     if (this.data.remark) tags.push({ key: "remark", label: this.data.remark });
@@ -383,32 +533,6 @@ Page({
 
   goSearch() {
     wx.navigateTo({ url: "/pages/search/index" });
-  },
-
-  async exportCurrentFilters() {
-    if (!this.data.isAdmin) return;
-    try {
-      const result = await wx.cloud.callFunction({
-        name: "accountingFunctions",
-        data: {
-          action: "exportBills",
-          familyId: app.globalData.currentFamilyId,
-          month: this.data.filterMonth,
-          category: this.data.filterCategory,
-          categoryLevel: this.data.filterCategoryLevel,
-          memberId: this.data.filterMember,
-          account: this.data.filterAccount,
-          type: this.data.filterType,
-          dateStart: this.data.filterDateStart,
-          dateEnd: this.data.filterDateEnd,
-          minAmount: this.data.filterMinAmount,
-          maxAmount: this.data.filterMaxAmount
-        }
-      });
-      if (!result.result?.success || !result.result.tempFileURL) throw new Error(result.result?.message || "导出失败");
-      const downloaded = await wx.downloadFile({ url: result.result.tempFileURL });
-      await wx.openDocument({ filePath: downloaded.tempFilePath, showMenu: true });
-    } catch (error) { wx.showToast({ title: error.message || "导出失败", icon: "none" }); }
   },
 
   onReachBottom() {

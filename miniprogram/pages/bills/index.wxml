@@ -1,35 +1,76 @@
 <view class="page">
   <!-- 顶部控制区 -->
   <view class="top-card">
-    <view class="period-row">
-      <view class="period-arrow" data-delta="-1" bindtap="changeMonth">‹</view>
-      <picker wx:if="{{!filterDateStart && !filterDateEnd}}" class="period-picker" mode="date" fields="month" value="{{filterMonth}}" bindchange="onMonthPickerChange">
-        <text class="period-label">{{periodDisplay}} ▾</text>
-      </picker>
-      <text wx:else class="period-label">{{periodDisplay}}</text>
-      <view class="period-arrow" data-delta="1" bindtap="changeMonth">›</view>
+    <view class="top-bar">
+      <view class="period-nav">
+        <view class="period-arrow" data-delta="-1" bindtap="changeMonth">‹</view>
+        <view class="period-picker" bindtap="openTimeSheet">
+          <text class="period-label">{{periodDisplay}}</text>
+          <text class="period-caret">▾</text>
+        </view>
+        <view class="period-arrow" data-delta="1" bindtap="changeMonth">›</view>
+      </view>
+      <view class="top-actions">
+        <view class="icon-btn {{hasActiveFilters ? 'active' : ''}}" bindtap="openFilter" hover-class="icon-btn-hover" hover-stay-time="80">
+          <text class="icon-btn-glyph">⚙</text>
+          <text wx:if="{{activeFilterCount > 0}}" class="icon-btn-badge">{{activeFilterCount}}</text>
+        </view>
+        <view class="icon-btn" bindtap="goSearch" hover-class="icon-btn-hover" hover-stay-time="80">
+          <text class="icon-btn-glyph">🔍</text>
+        </view>
+      </view>
     </view>
 
-    <view class="tool-row">
-      <view class="tool-pill {{hasActiveFilters ? 'active' : ''}}" bindtap="openFilter" hover-class="tool-pill-hover" hover-stay-time="80">
-        <text class="tool-icon">⚙</text>
-        <text>筛选</text>
-        <text wx:if="{{activeFilterCount > 0}}" class="tool-badge">{{activeFilterCount}}</text>
-      </view>
-      <view class="tool-pill" bindtap="goSearch" hover-class="tool-pill-hover" hover-stay-time="80">
-        <text class="tool-icon">🔍</text>
-        <text>搜索</text>
-      </view>
-      <view wx:if="{{isAdmin}}" class="tool-text" bindtap="exportCurrentFilters">导出</view>
-      <view wx:if="{{hasActiveFilters}}" class="tool-text clear" bindtap="clearFilters">清空筛选</view>
+    <view wx:if="{{activeFilterTags.length > 0}}" class="filter-bar">
+      <scroll-view scroll-x class="chip-scroll" enhanced show-scrollbar="{{false}}">
+        <view class="chip-row">
+          <view wx:for="{{activeFilterTags}}" wx:key="key" class="chip" data-key="{{item.key}}" bindtap="removeFilterTag" hover-class="chip-hover" hover-stay-time="80">
+            <text class="chip-label">{{item.label}}</text>
+            <text class="chip-close">×</text>
+          </view>
+        </view>
+      </scroll-view>
+      <text class="clear-link" bindtap="clearFilters">清空</text>
     </view>
+  </view>
 
-    <view wx:if="{{activeFilterTags.length > 0}}" class="chip-row">
-      <view wx:for="{{activeFilterTags}}" wx:key="key" class="chip" data-key="{{item.key}}" bindtap="removeFilterTag" hover-class="chip-hover" hover-stay-time="80">
-        <text class="chip-label">{{item.label}}</text>
-        <text class="chip-close">×</text>
-      </view>
+  <!-- 时间选择弹层 -->
+  <view class="time-sheet-mask" wx:if="{{showTimeSheet}}" bindtap="closeTimeSheet"></view>
+  <view class="time-sheet" wx:if="{{showTimeSheet}}" catchtap="stopPropagation">
+    <view class="time-sheet-header">
+      <text class="time-sheet-title">选择时间</text>
+      <text class="time-sheet-close" bindtap="closeTimeSheet">✕</text>
     </view>
+    <scroll-view scroll-y class="time-sheet-body">
+      <view class="quick-grid">
+        <view class="quick-chip {{quick === 'thisMonth' ? 'active' : ''}}" data-key="thisMonth" bindtap="selectQuick">本月</view>
+        <view class="quick-chip {{quick === 'lastMonth' ? 'active' : ''}}" data-key="lastMonth" bindtap="selectQuick">上月</view>
+        <view class="quick-chip {{quick === 'thisYear' ? 'active' : ''}}" data-key="thisYear" bindtap="selectQuick">今年</view>
+        <view class="quick-chip {{quick === 'all' ? 'active' : ''}}" data-key="all" bindtap="selectQuick">全部</view>
+      </view>
+      <view class="time-section">
+        <view class="time-section-head">
+          <text class="quick-chip small {{quick === 'custom' && timeMode === 'month' ? 'active' : ''}}" data-key="customMonth" bindtap="selectQuick">选择月份</text>
+        </view>
+        <picker wx:if="{{timeMode === 'month'}}" mode="date" fields="month" value="{{tempMonth}}" bindchange="onTempMonthChange">
+          <view class="picker-field">{{tempMonth || '请选择月份'}}</view>
+        </picker>
+      </view>
+      <view class="time-section">
+        <view class="time-section-head">
+          <text class="quick-chip small {{quick === 'custom' && timeMode === 'range' ? 'active' : ''}}" data-key="customRange" bindtap="selectQuick">自定义范围</text>
+        </view>
+        <view wx:if="{{timeMode === 'range'}}" class="range-row">
+          <picker mode="date" value="{{tempDateStart}}" bindchange="onTempStartChange">
+            <view class="picker-field">{{tempDateStart || '开始日期'}}</view>
+          </picker>
+          <text class="range-sep">至</text>
+          <picker mode="date" value="{{tempDateEnd}}" bindchange="onTempEndChange">
+            <view class="picker-field">{{tempDateEnd || '结束日期'}}</view>
+          </picker>
+        </view>
+      </view>
+    </scroll-view>
   </view>
 
   <!-- 账单列表 -->
