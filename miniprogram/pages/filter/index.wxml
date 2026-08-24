@@ -69,9 +69,9 @@
         <text class="filter-icon">💰</text>
         <text class="filter-label">金额</text>
       </view>
-      <input class="amount-input" placeholder="最低" value="{{minAmount}}" bindinput="onMinAmountInput" bindblur="onMinAmountBlur" type="digit" />
+      <input class="amount-input" placeholder="最低" placeholder-class="amount-input-placeholder" value="{{minAmount}}" bindinput="onMinAmountInput" bindblur="onMinAmountBlur" type="digit" />
       <text class="amount-sep">－</text>
-      <input class="amount-input" placeholder="最高" value="{{maxAmount}}" bindinput="onMaxAmountInput" bindblur="onMaxAmountBlur" type="digit" />
+      <input class="amount-input" placeholder="最高" placeholder-class="amount-input-placeholder" value="{{maxAmount}}" bindinput="onMaxAmountInput" bindblur="onMaxAmountBlur" type="digit" />
     </view>
 
     <view class="filter-row text-row">

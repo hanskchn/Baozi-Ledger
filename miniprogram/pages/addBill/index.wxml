@@ -6,9 +6,12 @@
   </view>
 
   <!-- 金额输入 -->
-  <view class="amount-row">
-    <text class="amount-symbol">¥</text>
-    <input class="amount-input" type="digit" placeholder="0.00" value="{{amount}}" bindinput="onAmountInput" focus="{{true}}" />
+  <view class="amount-card {{type === 'income' ? 'income' : 'expense'}}">
+    <text class="amount-title">{{type === 'income' ? '收入金额' : '支出金额'}}</text>
+    <view class="amount-row">
+      <text class="amount-symbol">¥</text>
+      <input class="amount-input" type="digit" placeholder="0.00" placeholder-class="amount-placeholder" value="{{amount}}" bindinput="onAmountInput" focus="{{true}}" />
+    </view>
   </view>
 
   <!-- 分类选择 -->

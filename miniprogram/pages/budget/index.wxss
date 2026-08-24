@@ -63,6 +63,7 @@
 
 .budget-symbol {
   font-size: 48rpx;
+  line-height: 88rpx;
   font-weight: 600;
   color: #5D4037;
   margin-right: 16rpx;
@@ -70,6 +71,9 @@
 
 .budget-input {
   flex: 1;
+  height: 88rpx;
+  min-height: 88rpx;
+  line-height: 88rpx;
   font-size: 56rpx;
   font-weight: 600;
   color: #5D4037;
@@ -78,6 +82,7 @@
 .budget-placeholder {
   color: #D7CCC5;
   font-weight: 400;
+  font-size: 56rpx;
 }
 
 .budget-display {
@@ -88,6 +93,7 @@
 
 .budget-amount-text {
   font-size: 56rpx;
+  line-height: 88rpx;
   font-weight: 600;
   color: #5D4037;
 }

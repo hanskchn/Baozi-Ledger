@@ -78,6 +78,8 @@
 .amount-input {
   flex: 1;
   height: 56rpx;
+  min-height: 56rpx;
+  line-height: 56rpx;
   background: #F5F0EB;
   border-radius: 28rpx;
   padding: 0 24rpx;
@@ -86,8 +88,9 @@
   text-align: center;
 }
 
-.amount-input::placeholder {
+.amount-input-placeholder {
   color: #bbb;
+  font-size: 26rpx;
 }
 
 .text-row .filter-row-left {
@@ -97,6 +100,8 @@
 .text-input {
   flex: 1;
   height: 64rpx;
+  min-height: 64rpx;
+  line-height: 64rpx;
   background: #F5F0EB;
   border-radius: 32rpx;
   padding: 0 28rpx;

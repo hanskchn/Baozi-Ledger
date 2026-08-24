@@ -46,26 +46,70 @@
   font-weight: 600;
 }
 
+/* 金额卡片 */
+.amount-card {
+  background: #fff;
+  padding: 28rpx 32rpx 32rpx;
+  margin-bottom: 16rpx;
+  border-radius: 16rpx;
+  box-shadow: 0 2rpx 12rpx rgba(93, 64, 55, 0.06);
+}
+
+.amount-title {
+  display: block;
+  font-size: 24rpx;
+  color: #A1887F;
+  letter-spacing: 2rpx;
+  margin-bottom: 8rpx;
+}
+
 .amount-row {
   display: flex;
-  align-items: center;
-  background: #fff;
-  padding: 32rpx 32rpx;
-  margin-bottom: 16rpx;
+  align-items: flex-end;
+  border-bottom: 2rpx solid #F5EFE6;
+  padding-bottom: 12rpx;
+}
+
+.amount-card.expense .amount-row {
+  border-bottom-color: #F8DEDE;
+}
+
+.amount-card.income .amount-row {
+  border-bottom-color: #D7EBD8;
 }
 
 .amount-symbol {
-  font-size: 48rpx;
+  font-size: 44rpx;
+  line-height: 88rpx;
   color: #5D4037;
   font-weight: 600;
-  margin-right: 16rpx;
+  margin-right: 12rpx;
 }
 
 .amount-input {
   flex: 1;
-  font-size: 56rpx;
+  height: 88rpx;
+  min-height: 88rpx;
+  line-height: 88rpx;
+  font-size: 60rpx;
   font-weight: 600;
   color: #5D4037;
+}
+
+.amount-card.expense .amount-symbol,
+.amount-card.expense .amount-input {
+  color: #e54545;
+}
+
+.amount-card.income .amount-symbol,
+.amount-card.income .amount-input {
+  color: #4CAF50;
+}
+
+.amount-placeholder {
+  font-size: 60rpx;
+  font-weight: 600;
+  color: #DCD3C7;
 }
 
 .form-row {
