@@ -223,10 +223,26 @@
 }
 
 .invite-code {
-  font-size: 46rpx;
+  font-size: 42rpx;
   font-weight: 700;
   color: #FF6B35;
-  letter-spacing: 8rpx;
+  letter-spacing: 4rpx;
+}
+
+/* 邀请面板内的邀请码整块居中展示 */
+.invite-box-sheet {
+  justify-content: center;
+  text-align: center;
+  margin-bottom: 16rpx;
+}
+
+.invite-box-sheet .invite-left {
+  align-items: center;
+}
+
+.invite-box-sheet .invite-code {
+  font-size: 50rpx;
+  letter-spacing: 6rpx;
 }
 
 .invite-copy {
@@ -481,26 +497,26 @@
 /* 邀请码输入 */
 .code-input {
   position: relative;
-  margin: 0 32rpx 20rpx;
+  margin: 0 24rpx 20rpx;
   background: #FFF8EC;
   border: 2rpx dashed #FFC599;
   border-radius: 20rpx;
-  padding: 28rpx 24rpx;
+  padding: 26rpx 12rpx;
   display: flex;
   justify-content: center;
 }
 
 .code-cell {
-  width: 76rpx;
-  height: 92rpx;
-  margin: 0 8rpx;
+  width: 62rpx;
+  height: 88rpx;
+  margin: 0 4rpx;
   border-radius: 16rpx;
   background: #fff;
   border: 2rpx solid #F0E2D4;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 42rpx;
+  font-size: 36rpx;
   font-weight: 700;
   color: #FF6B35;
 }
@@ -540,7 +556,7 @@
 }
 
 .primary-btn {
-  margin: 0 32rpx 8rpx;
+  margin: 0 32rpx 20rpx;
   background: linear-gradient(135deg, #FF8C42, #FF6B35);
   color: #fff;
   text-align: center;

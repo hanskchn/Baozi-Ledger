@@ -18,6 +18,8 @@ Page({
     try {
       const initialized = await app.ensureInitialized();
       if (initialized && initialized.loggedIn === false) { app.redirectToLogin(); return; }
+      // 轻量校验角色是否被服务端改动（如管理员被移交给自己），变化时会广播 onFamilyChanged
+      await app.refreshCurrentFamily();
       const user = app.globalData.userInfo || initialized.user;
       const family = app.globalData.currentFamily || initialized.family;
       // 本项目每个账本仅一位管理员，role 为 admin 即账本归属者；
@@ -35,6 +37,22 @@ Page({
     } catch (error) {
       wx.showToast({ title: error.message || "加载失败", icon: "none" });
     }
+  },
+
+  // 账本或角色发生变化时重渲染（由 app.onFamilyChange 广播触发）
+  onFamilyChanged(family) {
+    if (!family) {
+      this.setData({ familyName: "待确认邀请", isAdmin: false, isOwner: false, familyAdminName: "", roleReady: false });
+      return;
+    }
+    const isAdmin = family.role === "admin";
+    this.setData({
+      familyName: family.name || "待确认邀请",
+      isAdmin,
+      isOwner: family.isOwner === true || isAdmin,
+      familyAdminName: family.adminName || "",
+      roleReady: true
+    });
   },
 
   goFamily() {

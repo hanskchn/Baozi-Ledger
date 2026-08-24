@@ -9,6 +9,7 @@
     "pages/filter/index",
     "pages/addBill/index",
     "pages/family/index",
+    "pages/familyList/index",
     "pages/category/index",
     "pages/budget/index",
     "pages/account/index",

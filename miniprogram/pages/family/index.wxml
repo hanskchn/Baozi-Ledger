@@ -14,7 +14,7 @@
     <view class="hero-chips">
       <text class="chip {{chipClass}}">{{isAdmin ? '管理员' : '成员'}}</text>
       <text class="chip {{chipClass}}">{{memberCount}} 位成员</text>
-      <text class="chip {{chipClass}}">本月 {{monthBillCount}} 笔</text>
+      <text class="chip {{chipClass}}">累计 {{totalBillCount}} 笔</text>
     </view>
     <view class="hero-bar">
       <view class="avatar-row">
@@ -26,7 +26,7 @@
         ></image>
         <view class="avatar-more" wx:if="{{avatarMoreCount}}">+{{avatarMoreCount}}</view>
       </view>
-      <view class="hero-cta" wx:if="{{isAdmin}}" bindtap="scrollToInvite">＋ 邀请家人</view>
+      <view class="hero-cta" wx:if="{{isAdmin}}" bindtap="openInviteSheet">＋ 邀请家人</view>
     </view>
   </view>
 
@@ -40,7 +40,7 @@
     <view class="invite-box" wx:if="{{isAdmin}}">
       <view class="invite-left">
         <text class="invite-label">我的账本邀请码</text>
-        <text class="invite-code">{{inviteCode || '——————'}}</text>
+        <text class="invite-code">{{inviteCode || '————————'}}</text>
       </view>
       <view class="invite-copy" bindtap="copyInviteCode">复制</view>
     </view>
@@ -89,6 +89,22 @@
   </view>
 </view>
 
+<!-- 邀请家人面板 -->
+<view class="mask" wx:if="{{inviteSheetVisible}}" bindtap="closeInviteSheet"></view>
+<view class="sheet" wx:if="{{inviteSheetVisible}}">
+  <text class="sheet-title">邀请家人加入「{{currentFamilyName}}」</text>
+  <view class="invite-box invite-box-sheet">
+    <view class="invite-left">
+      <text class="invite-label">邀请码 · 7 天内有效</text>
+      <text class="invite-code">{{inviteCode}}</text>
+    </view>
+  </view>
+  <text class="invite-tip invite-tip-center">把邀请码发给家人，对方在「输入邀请码」处填入即可加入</text>
+  <view class="primary-btn" bindtap="copyInviteCode">复制邀请码</view>
+  <view class="sheet-item" bindtap="regenerateInvite">重新生成邀请码</view>
+  <view class="sheet-cancel" bindtap="closeInviteSheet">关闭</view>
+</view>
+
 <!-- 账本设置面板 -->
 <view class="mask" wx:if="{{settingsVisible}}" bindtap="closeFamilySettings"></view>
 <view class="sheet" wx:if="{{settingsVisible}}">
@@ -121,7 +137,7 @@
 <!-- 邀请码输入面板 -->
 <view class="mask" wx:if="{{joinVisible}}" bindtap="closeJoinInput"></view>
 <view class="sheet" wx:if="{{joinVisible}}">
-  <text class="sheet-title">输入 6 位邀请码</text>
+  <text class="sheet-title">输入 8 位邀请码</text>
   <view class="code-input" bindtap="focusJoinInput">
     <view
       class="code-cell {{index < joinCode.length ? 'code-cell-filled' : ''}} {{index === joinCode.length && joinFocus ? 'code-cell-active' : ''}}"
@@ -131,7 +147,7 @@
     <input
       class="code-proxy"
       type="text"
-      maxlength="6"
+      maxlength="8"
       focus="{{joinFocus}}"
       value="{{joinCode}}"
       bindinput="onJoinCodeInput"
@@ -144,6 +160,6 @@
     <text class="code-paste" bindtap="pasteInviteCode">从剪贴板粘贴</text>
   </view>
   <text class="invite-tip invite-tip-center">邀请码由对方账本的管理员生成，7 天内有效</text>
-  <view class="primary-btn {{joinCode.length === 6 ? '' : 'primary-btn-off'}}" bindtap="submitJoinCode">下一步</view>
+  <view class="primary-btn {{joinCode.length === 8 ? '' : 'primary-btn-off'}}" bindtap="submitJoinCode">下一步</view>
   <view class="sheet-cancel" bindtap="closeJoinInput">取消</view>
 </view>

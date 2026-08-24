@@ -18,7 +18,7 @@
           <text class="badge badge-admin" wx:if="{{item.role === 'admin'}}">管理员</text>
           <text class="badge badge-member" wx:else>成员</text>
         </view>
-        <text class="ledger-meta">{{item.memberCount}} 位成员 · 本月 {{item.monthBillCount}} 笔</text>
+        <text class="ledger-meta">{{item.memberCount}} 位成员 · 累计 {{item.totalBillCount}} 笔</text>
       </view>
       <text class="ledger-tick" wx:if="{{item.id === currentFamilyId}}">✓</text>
     </view>

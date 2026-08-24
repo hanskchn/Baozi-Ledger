@@ -198,6 +198,67 @@ App({
     this.notifyFamilyChange(family);
   },
 
+  // 角色/成员关系变更的轻量校验：先用 getFamilyRevision 比对 membershipRevision，
+  // 只有版本真的变了才拉一次完整详情并广播，避免每次 onShow 都全量请求。
+  // 移交管理员这类服务端侧变更（客户端无从感知），靠这里在下次进页面时收敛。
+  async refreshCurrentFamily() {
+    const familyId = this.globalData.currentFamilyId;
+    if (!familyId || this.globalData.loggedIn !== true) return null;
+    if (this.refreshingFamilyPromise) return this.refreshingFamilyPromise;
+    this.refreshingFamilyPromise = this._refreshCurrentFamily(familyId)
+      .catch((error) => {
+        // 校验失败不打扰用户，页面继续用现有缓存渲染
+        console.warn("刷新账本信息失败", error);
+        return null;
+      })
+      .then((result) => {
+        this.refreshingFamilyPromise = null;
+        return result;
+      });
+    return this.refreshingFamilyPromise;
+  },
+
+  async _refreshCurrentFamily(familyId) {
+    const response = await wx.cloud.callFunction({
+      name: "ledgerFunctions",
+      data: { action: "getFamilyRevision", familyId }
+    });
+    const result = response.result;
+    if (!result || !result.success) return null;
+    // 期间用户可能已切账本，丢弃过期结果
+    if (familyId !== this.globalData.currentFamilyId) return null;
+
+    const current = this.globalData.currentFamily || {};
+    // 账本被解散或自己已被移出：清空当前账本，交由页面重新初始化
+    if (result.exists === false) {
+      this.initializePromise = null;
+      this.onFamilyChange(null);
+      return { removed: true };
+    }
+
+    const knownRevision = Number(current.membershipRevision || 0);
+    const roleChanged = Boolean(current.role) && current.role !== result.role;
+    const revisionChanged = Number(result.membershipRevision || 0) !== knownRevision;
+    if (!roleChanged && !revisionChanged) return { changed: false };
+
+    const detail = await wx.cloud.callFunction({
+      name: "ledgerFunctions",
+      data: { action: "getFamilyDetail", familyId }
+    });
+    if (!detail.result || !detail.result.success) return null;
+    if (familyId !== this.globalData.currentFamilyId) return null;
+    const family = detail.result.family;
+    const becameAdmin = current.role === "member" && family.role === "admin";
+    const lostAdmin = current.role === "admin" && family.role === "member";
+    // 重置初始化缓存，让后续 ensureInitialized 拿到新角色
+    this.initializePromise = null;
+    this.onFamilyChange(family);
+    // 权限变化不能静默发生，给用户一个明确提示
+    if (becameAdmin) wx.showModal({ title: "你已成为管理员", content: "「" + (family.name || "该账本") + "」的管理员已移交给你，现在可以管理成员与账本设置。", showCancel: false });
+    else if (lostAdmin) wx.showModal({ title: "管理员已变更", content: "你在「" + (family.name || "该账本") + "」中已变为普通成员。", showCancel: false });
+    return { changed: true, becameAdmin, lostAdmin, family };
+  },
+
   notifyFamilyChange(family) {
     const pages = getCurrentPages();
     pages.forEach((page) => {

@@ -260,14 +260,13 @@ Page({
     });
     
     try {
-      const result = await wx.cloud.callFunction({
-        name: "ledgerFunctions",
-        data: { action: "getFamilyDetail", familyId: currentFamilyId }
-      });
-      const family = result.result?.family || {};
+      // 轻量校验：仅当账本成员/角色版本变化时才拉全量详情，并由 app 统一广播
+      await app.refreshCurrentFamily();
+      const family = app.globalData.currentFamily || {};
+      if (!app.globalData.currentFamilyId) return;
       this.setData({
         familyName: family.name || "",
-        isOwner: family.isOwner === true,
+        isOwner: family.isOwner === true || family.role === "admin",
         familyAdminName: family.adminName || "",
         roleReady: true
       });

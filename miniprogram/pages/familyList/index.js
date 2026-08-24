@@ -29,7 +29,7 @@ Page({
       this.setData({
         families: (result.families || []).map((item) => ({
           ...item,
-          monthBillCount: item.monthBillCount || 0,
+          totalBillCount: item.totalBillCount || 0,
           iconText: String(item.name || "账").trim().slice(0, 1)
         })),
         currentFamilyId: app.globalData.currentFamilyId || wx.getStorageSync("currentFamilyId") || ""
