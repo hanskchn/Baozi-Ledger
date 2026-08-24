@@ -51,8 +51,8 @@
 
 .user-family {
   font-size: 26rpx;
+  line-height: 36rpx;
   color: #8D6E63;
-  margin-top: 8rpx;
 }
 
 .menu-group {
@@ -108,8 +108,9 @@
 }
 .user-family-role {
   margin-left: 12rpx;
-  padding: 2rpx 12rpx;
+  padding: 0 12rpx;
   font-size: 20rpx;
+  line-height: 32rpx;
   border-radius: 16rpx;
   font-weight: 500;
   flex-shrink: 0;
