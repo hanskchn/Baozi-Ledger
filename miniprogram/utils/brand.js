@@ -4,6 +4,8 @@
 const brand = {
   available: true,
   logo: "/images/brand/bun-logo.png",
+  // 登录页专用：主题橙色版 Logo（与 --primary / --primary-deep 一致）
+  logoLogin: "/images/brand/bun-logo-orange.png",
   emptyBills: "/images/brand/empty-bills.png",
   welcome: "/images/brand/welcome-guide.png",
   searchEmpty: "/images/brand/search-empty.png",

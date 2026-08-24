@@ -1,112 +1,558 @@
 .page {
-  padding: 0 24rpx 40rpx;
+  padding: 24rpx 24rpx 60rpx;
 }
 
-.section-title {
+/* 当前账本 hero */
+.hero {
+  background: linear-gradient(135deg, #FF8C42 0%, #FF6B35 100%);
+  border-radius: 24rpx;
+  padding: 32rpx;
+  color: #fff;
+  box-shadow: 0 8rpx 24rpx rgba(255, 107, 53, 0.28);
+}
+
+.hero-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.hero-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  margin-right: 16rpx;
+}
+
+.hero-label {
+  font-size: 22rpx;
+  opacity: 0.85;
+  letter-spacing: 4rpx;
+}
+
+.hero-name {
+  font-size: 44rpx;
+  font-weight: 700;
+  margin-top: 8rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hero-right {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.hero-switch {
+  background: rgba(255, 255, 255, 0.22);
+  font-size: 24rpx;
+  padding: 10rpx 22rpx;
+  border-radius: 28rpx;
+  white-space: nowrap;
+}
+
+.hero-more {
+  width: 56rpx;
+  height: 56rpx;
+  margin-left: 14rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.24);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 30rpx;
-  font-weight: 600;
-  color: #5D4037;
-  margin: 32rpx 0 16rpx;
+  line-height: 1;
 }
 
-.family-card {
+/* 三个胶囊必须同行显示：整行禁止换行，字号按内容长度自适应 */
+.hero-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  margin-top: 20rpx;
+  overflow: hidden;
+}
+
+.chip {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 22rpx;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-right: 12rpx;
+}
+
+.chip:last-child {
+  margin-right: 0;
+}
+
+.chip-lg {
+  font-size: 23rpx;
+  padding: 6rpx 20rpx;
+}
+
+.chip-md {
+  font-size: 21rpx;
+  padding: 6rpx 16rpx;
+}
+
+.chip-sm {
+  font-size: 19rpx;
+  padding: 5rpx 12rpx;
+}
+
+.chip-xs {
+  font-size: 17rpx;
+  padding: 5rpx 10rpx;
+  margin-right: 8rpx;
+}
+
+.hero-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #fff;
-  padding: 28rpx 32rpx;
-  border-radius: 12rpx;
-  margin-bottom: 12rpx;
+  margin-top: 26rpx;
+  padding-top: 24rpx;
+  border-top: 2rpx solid rgba(255, 255, 255, 0.28);
 }
 
-.family-info {
+.avatar-row {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  min-width: 0;
 }
 
-.family-name {
-  font-size: 32rpx;
-  font-weight: 500;
+.avatar-mini {
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 50%;
+  border: 4rpx solid #fff;
+  background: #FFE0C7;
+  margin-left: -16rpx;
+  flex-shrink: 0;
+}
+
+.avatar-mini:first-child {
+  margin-left: 0;
+}
+
+.avatar-more {
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 50%;
+  border: 4rpx solid #fff;
+  background: #FFF3E6;
+  color: #FF6B35;
+  font-size: 20rpx;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: -16rpx;
+  flex-shrink: 0;
+}
+
+.hero-cta {
+  background: #fff;
+  color: #FF6B35;
+  font-size: 26rpx;
+  font-weight: 700;
+  padding: 14rpx 28rpx;
+  border-radius: 36rpx;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: 16rpx;
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.12);
+}
+
+/* 通用卡片 */
+.card {
+  background: #fff;
+  border-radius: 20rpx;
+  margin-top: 24rpx;
+  overflow: hidden;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28rpx 32rpx 20rpx;
+}
+
+.card-title {
+  font-size: 30rpx;
+  font-weight: 600;
   color: #5D4037;
 }
 
-.family-members {
-  font-size: 24rpx;
-  color: #999;
-  margin-top: 8rpx;
-}
-
-.family-current {
+.card-extra {
   font-size: 24rpx;
   color: #D96A23;
-  background: #FFF3E6;
-  padding: 6rpx 20rpx;
+}
+
+.card-extra-plain {
+  font-size: 24rpx;
+  color: #BCAAA4;
+}
+
+/* 邀请码 */
+.invite-box {
+  margin: 0 32rpx 24rpx;
+  background: #FFF8EC;
+  border: 2rpx dashed #FFC599;
   border-radius: 20rpx;
-}
-
-.btn-outline {
-  margin-top: 16rpx;
-  background: #fff;
-  color: #D96A23;
-  font-size: 30rpx;
-  border: 2rpx solid #D96A23;
-  border-radius: 44rpx;
-  height: 80rpx;
-  line-height: 76rpx;
-}
-
-.member-actions {
+  padding: 26rpx 28rpx;
   display: flex;
-  gap: 24rpx;
+  align-items: center;
+  justify-content: space-between;
 }
 
-.member-transfer {
+.invite-left {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.invite-label {
+  font-size: 22rpx;
+  color: #8D6E63;
+  margin-bottom: 6rpx;
+}
+
+.invite-code {
+  font-size: 46rpx;
+  font-weight: 700;
+  color: #FF6B35;
+  letter-spacing: 8rpx;
+}
+
+.invite-copy {
+  background: #FF8C42;
+  color: #fff;
   font-size: 26rpx;
+  font-weight: 600;
+  padding: 14rpx 32rpx;
+  border-radius: 34rpx;
+  flex-shrink: 0;
+  margin-left: 16rpx;
+}
+
+.invite-tip {
+  display: block;
+  font-size: 22rpx;
+  color: #BCAAA4;
+  line-height: 1.6;
+  padding: 0 32rpx 26rpx;
+}
+
+.invite-tip-center {
+  text-align: center;
+  padding-bottom: 20rpx;
+}
+
+/* 输入邀请码入口 */
+.join-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 32rpx;
+  border-top: 2rpx solid #F5EFE6;
+}
+
+.join-left {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.join-icon {
+  width: 60rpx;
+  height: 60rpx;
+  border-radius: 18rpx;
+  background: #FFF3E6;
+  color: #FF8C42;
+  font-size: 30rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 18rpx;
+  flex-shrink: 0;
+}
+
+.join-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.join-title {
+  font-size: 28rpx;
+  color: #5D4037;
+  font-weight: 500;
+}
+
+.join-sub {
+  font-size: 22rpx;
+  color: #BCAAA4;
+  margin-top: 4rpx;
+}
+
+.join-btn {
+  border: 2rpx solid #FFC599;
   color: #D96A23;
+  background: #fff;
+  font-size: 25rpx;
+  font-weight: 600;
+  padding: 12rpx 26rpx;
+  border-radius: 32rpx;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: 16rpx;
 }
 
-.btn-outline::after {
-  border: none;
-}
-
+/* 成员列表 */
 .member-item {
   display: flex;
   align-items: center;
-  background: #fff;
   padding: 24rpx 32rpx;
-  border-radius: 12rpx;
-  margin-bottom: 2rpx;
+  border-top: 2rpx solid #F5EFE6;
 }
 
 .member-avatar {
-  width: 72rpx;
-  height: 72rpx;
+  width: 80rpx;
+  height: 80rpx;
   border-radius: 50%;
-  margin-right: 20rpx;
+  margin-right: 22rpx;
   background: #F5EBDD;
+  flex-shrink: 0;
 }
 
 .member-info {
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+}
+
+.member-line {
+  display: flex;
+  align-items: center;
 }
 
 .member-name {
   font-size: 30rpx;
   color: #5D4037;
   font-weight: 500;
+  max-width: 300rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.member-role {
-  font-size: 24rpx;
-  color: #999;
+.badge {
+  font-size: 20rpx;
+  font-weight: 600;
+  padding: 4rpx 14rpx;
+  border-radius: 16rpx;
+  margin-left: 12rpx;
+  white-space: nowrap;
+}
+
+.badge-admin {
+  background: #FFF3E6;
+  color: #D96A23;
+}
+
+.badge-me {
+  background: #E8F5E9;
+  color: #4CAF50;
+}
+
+.badge-member {
+  background: #F5F0E8;
+  color: #8D6E63;
+}
+
+.member-meta {
+  font-size: 22rpx;
+  color: #BCAAA4;
   margin-top: 6rpx;
 }
 
-.member-remove {
+.member-chevron {
+  color: #D7C9BD;
+  font-size: 32rpx;
+  margin-left: 12rpx;
+  flex-shrink: 0;
+}
+
+.member-expand {
+  text-align: center;
+  padding: 26rpx;
+  border-top: 2rpx solid #F5EFE6;
   font-size: 26rpx;
+  color: #D96A23;
+  font-weight: 500;
+}
+
+/* 底部面板 */
+.mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.42);
+  z-index: 10;
+}
+
+.sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #fff;
+  border-radius: 32rpx 32rpx 0 0;
+  padding-bottom: calc(16rpx + env(safe-area-inset-bottom));
+  z-index: 11;
+}
+
+.sheet-title {
+  display: block;
+  text-align: center;
+  font-size: 26rpx;
+  color: #BCAAA4;
+  padding: 30rpx 32rpx 22rpx;
+}
+
+.sheet-item {
+  text-align: center;
+  font-size: 30rpx;
+  color: #5D4037;
+  padding: 30rpx 0;
+  border-top: 2rpx solid #F5EFE6;
+}
+
+.sheet-danger {
   color: #e54545;
 }
 
-.leave-btn { margin-top: 24rpx; background: #FFF0EB; color: #FF6B35; font-size: 28rpx; border-radius: 40rpx; }
+.sheet-cancel {
+  text-align: center;
+  font-size: 30rpx;
+  color: #8D6E63;
+  font-weight: 500;
+  padding: 28rpx 0;
+  margin-top: 14rpx;
+  border-top: 16rpx solid #FAF6F0;
+}
+
+/* 成员详情头部 */
+.member-big {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40rpx 32rpx 16rpx;
+}
+
+.member-big-avatar {
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 50%;
+  background: #F5EBDD;
+  margin-bottom: 18rpx;
+}
+
+.member-big-name {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #5D4037;
+}
+
+.member-big-meta {
+  font-size: 24rpx;
+  color: #BCAAA4;
+  margin-top: 10rpx;
+}
+
+/* 邀请码输入 */
+.code-input {
+  position: relative;
+  margin: 0 32rpx 20rpx;
+  background: #FFF8EC;
+  border: 2rpx dashed #FFC599;
+  border-radius: 20rpx;
+  padding: 28rpx 24rpx;
+  display: flex;
+  justify-content: center;
+}
+
+.code-cell {
+  width: 76rpx;
+  height: 92rpx;
+  margin: 0 8rpx;
+  border-radius: 16rpx;
+  background: #fff;
+  border: 2rpx solid #F0E2D4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 42rpx;
+  font-weight: 700;
+  color: #FF6B35;
+}
+
+.code-cell-filled {
+  border-color: #FF8C42;
+}
+
+.code-cell-active {
+  border-color: #FF8C42;
+  box-shadow: 0 0 0 4rpx rgba(255, 140, 66, 0.18);
+}
+
+/* 真实输入框覆盖在格子上，用于拉起键盘与系统粘贴 */
+.code-proxy {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.code-actions {
+  display: flex;
+  justify-content: center;
+  padding-bottom: 6rpx;
+}
+
+.code-paste {
+  font-size: 26rpx;
+  color: #D96A23;
+  font-weight: 500;
+  padding: 8rpx 24rpx;
+}
+
+.primary-btn {
+  margin: 0 32rpx 8rpx;
+  background: linear-gradient(135deg, #FF8C42, #FF6B35);
+  color: #fff;
+  text-align: center;
+  font-size: 32rpx;
+  font-weight: 600;
+  padding: 26rpx 0;
+  border-radius: 48rpx;
+  box-shadow: 0 8rpx 20rpx rgba(255, 107, 53, 0.3);
+}
+
+.primary-btn-off {
+  background: #F0E4D8;
+  color: #C7B6A8;
+  box-shadow: none;
+}

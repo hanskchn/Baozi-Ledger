@@ -15,6 +15,12 @@
     <view class="invite-actions"><text class="invite-cancel" bindtap="declinePendingInvite">暂不加入</text><text class="invite-remove" bindtap="removePendingInvite">删除邀请</text></view>
   </view>
   <block wx:else>
+  <!-- 昵称仍为默认值时的完善提示：点一次昵称框即可补齐，可手动关闭 -->
+  <view class="nickname-tip" wx:if="{{showNicknameTip}}">
+    <text class="nickname-tip-text">昵称还是默认的「微信用户」，点右侧补齐让家人认出你</text>
+    <input class="nickname-tip-input" type="nickname" placeholder="设置昵称" placeholder-class="nickname-tip-placeholder" bindinput="onNicknameTipChange" bindblur="onNicknameTipChange" bindnicknamereview="onNicknameTipChange" />
+    <text class="nickname-tip-close" catchtap="closeNicknameTip">✕</text>
+  </view>
   <!-- 顶部账本切换 -->
   <view class="family-bar">
     <view class="family-title">
@@ -23,7 +29,7 @@
         <image class="family-edit" src="/images/icons/edit.png" mode="aspectFit"></image>
       </view>
       <text wx:else class="family-name">{{familyName}}</text>
-      <text class="family-role {{isOwner ? 'owner' : 'member'}}">{{isOwner ? '我的' : familyAdminName ? (familyAdminName + '的') : '成员'}}</text>
+      <text wx:if="{{roleReady}}" class="family-role {{isOwner ? 'owner' : 'member'}}">{{isOwner ? '我的' : familyAdminName ? (familyAdminName + '的') : '成员'}}</text>
     </view>
     <view class="family-switch" bindtap="openFamilyPicker">切换⌄</view>
   </view>

@@ -27,6 +27,45 @@
   background: #fff;
 }
 
+.nickname-tip {
+  display: flex;
+  align-items: center;
+  margin: 16rpx 24rpx 0;
+  padding: 20rpx 24rpx;
+  background: var(--primary-light);
+  border-radius: 16rpx;
+}
+
+.nickname-tip-text {
+  flex: 1;
+  font-size: 24rpx;
+  line-height: 34rpx;
+  color: var(--text-secondary);
+}
+
+.nickname-tip-input {
+  width: 180rpx;
+  margin-left: 16rpx;
+  padding: 10rpx 20rpx;
+  background: #fff;
+  border-radius: 24rpx;
+  text-align: center;
+  font-size: 24rpx;
+  color: var(--primary-deep);
+}
+
+.nickname-tip-close {
+  margin-left: 16rpx;
+  padding: 0 8rpx;
+  font-size: 26rpx;
+  color: var(--text-tertiary);
+}
+
+.nickname-tip-placeholder {
+  color: var(--primary-deep);
+  font-size: 24rpx;
+}
+
 .family-title {
   display: flex;
   align-items: center;

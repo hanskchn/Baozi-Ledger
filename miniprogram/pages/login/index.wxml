@@ -1,0 +1,36 @@
+<view class="login-page">
+  <view class="login-hero">
+    <image wx:if="{{hasBrandAssets && !logoFailed}}" class="login-logo" src="{{logoSrc}}" mode="aspectFit" binderror="onLogoError"></image>
+    <text wx:else class="login-logo-text">包子账本</text>
+    <text class="login-slogan">钱要算清楚，日子慢慢过。</text>
+    <text class="login-subtitle">包子账本，和家人一起记下每一笔生活开销。</text>
+    <text class="login-tagline">简单好用，打开就记。</text>
+  </view>
+  <view wx:if="{{checking}}" class="login-checking">
+    <text class="login-checking-text">正在检查登录状态…</text>
+  </view>
+  <view wx:else class="login-card">
+    <!-- 昵称为可选项：微信要求用户主动点选候选项，不能自动聚焦（否则报 init before tap） -->
+    <view class="login-field">
+      <text class="login-label">昵称</text>
+      <input
+        class="login-input"
+        type="nickname"
+        placeholder="可选，点此使用微信昵称"
+        bindinput="onNickNameChange"
+        bindblur="onNickNameChange"
+        bindnicknamereview="onNickNameChange"
+      />
+    </view>
+    <!-- 登录按钮本身即微信头像授权按钮：点一次授权头像后立即登录 -->
+    <button
+      class="login-submit {{submitting ? 'is-loading' : ''}}"
+      open-type="chooseAvatar"
+      loading="{{submitting}}"
+      disabled="{{submitting}}"
+      bindchooseavatar="onChooseAvatar"
+    >微信一键登录</button>
+    <text class="login-skip" bindtap="onUseDefault">暂不授权，使用默认昵称头像</text>
+    <text class="login-agreement">登录代表你同意我们仅使用你的微信昵称和头像用于账本内的成员展示，不会用于其他用途。登录后可在“我的”页面随时修改。</text>
+  </view>
+</view>

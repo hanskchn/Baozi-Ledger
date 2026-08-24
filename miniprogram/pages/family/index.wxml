@@ -1,35 +1,149 @@
 <view class="page">
-  <view class="section-title">我的家庭</view>
-  <view class="family-list">
-    <view class="family-card" wx:for="{{families}}" wx:key="id" data-id="{{item.id}}" bindtap="switchFamily">
-      <view class="family-info">
-        <text class="family-name">{{item.name}}</text>
-        <text class="family-members">{{item.memberCount}} 位成员</text>
+  <!-- 当前账本 hero -->
+  <view class="hero" wx:if="{{currentFamilyId}}">
+    <view class="hero-top">
+      <view class="hero-main">
+        <text class="hero-label">当前账本</text>
+        <text class="hero-name">{{currentFamilyName}}</text>
       </view>
-      <text class="family-current" wx:if="{{item.id === currentFamilyId}}">当前</text>
+      <view class="hero-right">
+        <view class="hero-switch" bindtap="goFamilyList">切换 ›</view>
+        <view class="hero-more" bindtap="openFamilySettings">···</view>
+      </view>
+    </view>
+    <view class="hero-chips">
+      <text class="chip {{chipClass}}">{{isAdmin ? '管理员' : '成员'}}</text>
+      <text class="chip {{chipClass}}">{{memberCount}} 位成员</text>
+      <text class="chip {{chipClass}}">本月 {{monthBillCount}} 笔</text>
+    </view>
+    <view class="hero-bar">
+      <view class="avatar-row">
+        <image
+          class="avatar-mini"
+          wx:for="{{avatarPreview}}"
+          wx:key="memberId"
+          src="{{item.avatarUrl || '/images/icons/avatar.png'}}"
+        ></image>
+        <view class="avatar-more" wx:if="{{avatarMoreCount}}">+{{avatarMoreCount}}</view>
+      </view>
+      <view class="hero-cta" wx:if="{{isAdmin}}" bindtap="scrollToInvite">＋ 邀请家人</view>
     </view>
   </view>
 
-  <button class="btn-outline" bindtap="createFamily">+ 创建新家庭</button>
-  <button class="btn-outline" bindtap="renameCurrentFamily" wx:if="{{isAdmin}}">修改当前账本名称</button>
+  <!-- 邀请与加入 -->
+  <view class="card" id="inviteCard">
+    <view class="card-head">
+      <text class="card-title">邀请与加入</text>
+      <text class="card-extra" wx:if="{{isAdmin && inviteCode}}" bindtap="regenerateInvite">7 天内有效 ›</text>
+    </view>
 
+    <view class="invite-box" wx:if="{{isAdmin}}">
+      <view class="invite-left">
+        <text class="invite-label">我的账本邀请码</text>
+        <text class="invite-code">{{inviteCode || '——————'}}</text>
+      </view>
+      <view class="invite-copy" bindtap="copyInviteCode">复制</view>
+    </view>
+    <text class="invite-tip" wx:if="{{isAdmin}}">把邀请码发给家人，对方在「输入邀请码」处填入即可加入</text>
 
-  <view class="section-title">家庭成员</view>
-  <view class="member-list">
-    <view class="member-item" wx:for="{{members}}" wx:key="memberId">
+    <view class="join-row" bindtap="openJoinInput">
+      <view class="join-left">
+        <view class="join-icon">⌨</view>
+        <view class="join-text">
+          <text class="join-title">输入邀请码</text>
+          <text class="join-sub">加入别人的家庭账本</text>
+        </view>
+      </view>
+      <view class="join-btn">去输入</view>
+    </view>
+  </view>
+
+  <!-- 家庭成员 -->
+  <view class="card">
+    <view class="card-head">
+      <text class="card-title">家庭成员</text>
+      <text class="card-extra-plain">{{memberCount}} / {{maxMemberCount}}</text>
+    </view>
+    <view
+      class="member-item"
+      wx:for="{{visibleMembers}}"
+      wx:key="memberId"
+      data-member-id="{{item.memberId}}"
+      bindtap="openMemberSheet"
+    >
       <image class="member-avatar" src="{{item.avatarUrl || '/images/icons/avatar.png'}}"></image>
       <view class="member-info">
-        <text class="member-name">{{item.nickName}}</text>
-        <text class="member-role">{{item.role === 'admin' ? '管理员' : '成员'}}</text>
+        <view class="member-line">
+          <text class="member-name">{{item.nickName}}</text>
+          <text class="badge badge-admin" wx:if="{{item.role === 'admin'}}">管理员</text>
+          <text class="badge badge-me" wx:if="{{item.isSelf}}">我</text>
+          <text class="badge badge-member" wx:if="{{item.role !== 'admin' && !item.isSelf}}">成员</text>
+        </view>
+        <text class="member-meta">{{item.metaText}}</text>
       </view>
-      <view class="member-actions" wx:if="{{item.role !== 'admin' && isAdmin}}">
-        <text class="member-transfer" data-member-id="{{item.memberId}}" bindtap="transferAdmin">移交</text>
-        <text class="member-remove" data-member-id="{{item.memberId}}" bindtap="removeMember">移除</text>
-      </view>
+      <text class="member-chevron">›</text>
+    </view>
+    <view class="member-expand" wx:if="{{membersCollapsed}}" bindtap="expandMembers">
+      查看全部 {{memberCount}} 位成员 ›
     </view>
   </view>
+</view>
 
-  <button class="btn-outline share-invite" open-type="share" wx:if="{{isAdmin}}">分享邀请链接</button>
-  <button class="btn-outline" bindtap="revokeInvite" wx:if="{{isAdmin && inviteCode}}">撤销当前邀请链接</button>
-  <button class="leave-btn" bindtap="leaveFamily" wx:if="{{!isAdmin && currentFamilyId}}">退出当前账本</button>
+<!-- 账本设置面板 -->
+<view class="mask" wx:if="{{settingsVisible}}" bindtap="closeFamilySettings"></view>
+<view class="sheet" wx:if="{{settingsVisible}}">
+  <text class="sheet-title">{{currentFamilyName}} · 账本设置</text>
+  <view class="sheet-item" wx:if="{{isAdmin}}" bindtap="renameCurrentFamily">修改账本名称</view>
+  <view class="sheet-item" wx:if="{{isAdmin}}" bindtap="regenerateInvite">重新生成邀请码</view>
+  <view class="sheet-item" wx:if="{{isAdmin && inviteCode}}" bindtap="revokeInvite">撤销当前邀请码</view>
+  <view class="sheet-item sheet-danger" wx:if="{{!isAdmin}}" bindtap="leaveFamily">退出当前账本</view>
+  <view class="sheet-cancel" bindtap="closeFamilySettings">取消</view>
+</view>
+
+<!-- 成员详情面板 -->
+<view class="mask" wx:if="{{memberSheetVisible}}" bindtap="closeMemberSheet"></view>
+<view class="sheet" wx:if="{{memberSheetVisible}}">
+  <view class="member-big">
+    <image class="member-big-avatar" src="{{activeMember.avatarUrl || '/images/icons/avatar.png'}}"></image>
+    <view class="member-line">
+      <text class="member-big-name">{{activeMember.nickName}}</text>
+      <text class="badge badge-admin" wx:if="{{activeMember.role === 'admin'}}">管理员</text>
+      <text class="badge badge-me" wx:if="{{activeMember.isSelf}}">我</text>
+      <text class="badge badge-member" wx:if="{{activeMember.role !== 'admin' && !activeMember.isSelf}}">成员</text>
+    </view>
+    <text class="member-big-meta">{{activeMember.metaText}}</text>
+  </view>
+  <view class="sheet-item" wx:if="{{canManageActiveMember}}" bindtap="transferAdmin">设为管理员</view>
+  <view class="sheet-item sheet-danger" wx:if="{{canManageActiveMember}}" bindtap="removeMember">移出账本</view>
+  <view class="sheet-cancel" bindtap="closeMemberSheet">取消</view>
+</view>
+
+<!-- 邀请码输入面板 -->
+<view class="mask" wx:if="{{joinVisible}}" bindtap="closeJoinInput"></view>
+<view class="sheet" wx:if="{{joinVisible}}">
+  <text class="sheet-title">输入 6 位邀请码</text>
+  <view class="code-input" bindtap="focusJoinInput">
+    <view
+      class="code-cell {{index < joinCode.length ? 'code-cell-filled' : ''}} {{index === joinCode.length && joinFocus ? 'code-cell-active' : ''}}"
+      wx:for="{{codeCells}}"
+      wx:key="*this"
+    >{{item}}</view>
+    <input
+      class="code-proxy"
+      type="text"
+      maxlength="6"
+      focus="{{joinFocus}}"
+      value="{{joinCode}}"
+      bindinput="onJoinCodeInput"
+      bindblur="onJoinInputBlur"
+      confirm-type="done"
+      bindconfirm="submitJoinCode"
+    />
+  </view>
+  <view class="code-actions">
+    <text class="code-paste" bindtap="pasteInviteCode">从剪贴板粘贴</text>
+  </view>
+  <text class="invite-tip invite-tip-center">邀请码由对方账本的管理员生成，7 天内有效</text>
+  <view class="primary-btn {{joinCode.length === 6 ? '' : 'primary-btn-off'}}" bindtap="submitJoinCode">下一步</view>
+  <view class="sheet-cancel" bindtap="closeJoinInput">取消</view>
 </view>

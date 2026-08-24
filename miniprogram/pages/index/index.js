@@ -46,6 +46,9 @@ Page({
     ,showSwipeGuide: false
     ,swipeOffsetMap: {}
     ,swipeAnimating: false
+    ,showNicknameTip: false
+    // 角色未确认前不渲染标签，避免管理员先闪现“成员”
+    ,roleReady: false
   },
 
   onLoad() {
@@ -54,6 +57,11 @@ Page({
   },
 
   onShow() {
+    // 门禁：本地缓存显示未登录时先跳登录页，避免闪现空账本首页
+    if (app.globalData.loggedIn !== true) {
+      app.redirectToLogin();
+      return;
+    }
     // 刚记完账/编辑/删除过账单：跳过首页摘要缓存，避免短暂闪旧数据
     const homeDirty = app.globalData.homeSummaryDirty === true;
     if (homeDirty) app.globalData.homeSummaryDirty = false;
@@ -66,8 +74,49 @@ Page({
     }
     // 1) 先用 storage 缓存立刻渲染骨架内容（hasCache 标记避免覆盖式 setData）
     const hasCache = this.applyCachedHome({ skipIfDirty: homeDirty });
+    this.refreshNicknameTip();
     // 2) 后台刷新：silent=true 时不重复展示 loading，错误也仅在无缓存时落到 errorMessage
     this.refreshHome({ silent: hasCache });
+  },
+
+  // 昵称仍是默认值且用户未关闭过提示时，展示"完善昵称"提示条
+  refreshNicknameTip() {
+    const nickName = app.globalData.userInfo?.nickName || "";
+    const dismissed = wx.getStorageSync("hasDismissedNicknameTip") === true;
+    const needsNickname = !nickName || nickName === "微信用户";
+    this.setData({ showNicknameTip: needsNickname && !dismissed });
+  },
+
+  // bindinput 的返回值会被微信当作输入框新值回填，
+  // 所以这里必须是同步函数且不返回内容（async 会回填 Promise，显示 undefined）。
+  onNicknameTipChange(event) {
+    const nickName = (event.detail?.value || event.detail?.nickname || "").trim();
+    if (!nickName || nickName === "微信用户") return;
+    this.saveNicknameFromTip(nickName);
+  },
+
+  async saveNicknameFromTip(nickName) {
+    if (this._savingNickname) return;
+    this._savingNickname = true;
+    try {
+      const response = await wx.cloud.callFunction({
+        name: "ledgerFunctions",
+        data: { action: "updateUserProfile", nickName, avatarUrl: app.globalData.userInfo?.avatarUrl || "" }
+      });
+      if (!response.result?.success) throw new Error(response.result?.message || "保存失败");
+      app.setLoginState(true, response.result.user);
+      this.setData({ showNicknameTip: false });
+      wx.showToast({ title: "昵称已更新" });
+    } catch (error) {
+      wx.showToast({ title: error.message || "昵称保存失败", icon: "none" });
+    } finally {
+      this._savingNickname = false;
+    }
+  },
+
+  closeNicknameTip() {
+    try { wx.setStorageSync("hasDismissedNicknameTip", true); } catch (error) { /* ignore */ }
+    this.setData({ showNicknameTip: false });
   },
 
   applyCachedHome(options) {
@@ -94,6 +143,7 @@ Page({
       familyName: cached.familyName || app.globalData.currentFamily?.name || "",
       isOwner: cached.isOwner === true || app.globalData.currentFamily?.isOwner === true,
       familyAdminName: cached.familyAdminName || app.globalData.currentFamily?.adminName || "",
+      roleReady: true,
       todayExpense: cached.summary.todayExpense || "0.00",
       monthExpense: cached.summary.monthExpense || "0.00",
       monthIncome: cached.summary.monthIncome || "0.00",
@@ -121,6 +171,10 @@ Page({
     if (!silent) this.setData({ loading: true, errorMessage: "" });
     try {
       const initialized = await app.ensureInitialized();
+      if (initialized && initialized.loggedIn === false) {
+        app.redirectToLogin();
+        return;
+      }
       if (app.globalData.initializationNotice) {
         wx.showToast({ title: app.globalData.initializationNotice, icon: "none" });
         app.globalData.initializationNotice = "";
@@ -130,6 +184,8 @@ Page({
         return;
       }
       this.setData({ pendingInvite: null });
+      // 初始化拿到最新用户资料后再判定一次，避免缓存里没有昵称时误判
+      this.refreshNicknameTip();
       if (app.globalData.currentFamily && app.globalData.currentFamily.created && !wx.getStorageSync("hasSeenWelcome")) {
         this.setData({ showWelcome: true });
       }
@@ -187,15 +243,20 @@ Page({
   async loadFamilyInfo() {
     const currentFamilyId = app.globalData.currentFamilyId;
     if (!currentFamilyId) {
-      this.setData({ familyName: "未加入家庭", isOwner: false, familyAdminName: "" });
+      this.setData({ familyName: "未加入家庭", isOwner: false, familyAdminName: "", roleReady: false });
       return;
     }
     const currentFamily = app.globalData.currentFamily || {};
+    // globalData 里已有角色时才展示标签，未知则等云端返回，避免闪成“成员”
+    // 每个账本仅一位管理员，role 为 admin 即归属者；旧缓存缺 isOwner 时用 role 兜底
+    const cachedIsOwner = currentFamily.isOwner === true || currentFamily.role === "admin";
+    const hasCachedRole = typeof currentFamily.isOwner === "boolean" || Boolean(currentFamily.role);
     this.setData({
       currentFamilyId,
       familyName: currentFamily.name || "",
-      isOwner: currentFamily.isOwner === true,
-      familyAdminName: currentFamily.adminName || ""
+      isOwner: cachedIsOwner,
+      familyAdminName: currentFamily.adminName || "",
+      roleReady: hasCachedRole || this.data.roleReady
     });
     
     try {
@@ -207,7 +268,8 @@ Page({
       this.setData({
         familyName: family.name || "",
         isOwner: family.isOwner === true,
-        familyAdminName: family.adminName || ""
+        familyAdminName: family.adminName || "",
+        roleReady: true
       });
     } catch (error) {
       console.error("加载家庭信息失败", error);

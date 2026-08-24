@@ -112,6 +112,48 @@ const COLLECTIONS = [
   "initialization_locks"
 ];
 
+const padMonthPart = (value) => String(value).padStart(2, "0");
+// 当前月份按上海时区（UTC+8）计算，与记账端 getShanghaiDate 保持一致
+const getCurrentMonth = () => {
+  const shifted = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  return shifted.getUTCFullYear() + "-" + padMonthPart(shifted.getUTCMonth() + 1);
+};
+// 账单 date 字段为 "YYYY-MM-DD HH:mm" 字符串，用前缀区间统计当月笔数
+const getMonthRange = (month) => {
+  const [year, value] = month.split("-").map(Number);
+  const nextMonth = value === 12 ? 1 : value + 1;
+  const nextYear = value === 12 ? year + 1 : year;
+  return { start: month + "-01 00:00", end: nextYear + "-" + padMonthPart(nextMonth) + "-01 00:00" };
+};
+const countFamilyMonthBills = async (familyId, month) => {
+  const range = getMonthRange(month || getCurrentMonth());
+  try {
+    const result = await db.collection("bills").where({
+      familyId,
+      deleted: false,
+      date: command.gte(range.start).and(command.lt(range.end))
+    }).count();
+    return result.total || 0;
+  } catch (error) {
+    console.warn("countFamilyMonthBills failed", familyId, error);
+    return 0;
+  }
+};
+// 成员累计记账笔数（不限月份），用于成员卡展示
+const countMemberBills = async (familyId, openids) => {
+  const counts = {};
+  await Promise.all(openids.map(async (openid) => {
+    try {
+      const result = await db.collection("bills").where({ familyId, deleted: false, memberOpenid: openid }).count();
+      counts[openid] = result.total || 0;
+    } catch (error) {
+      console.warn("countMemberBills failed", familyId, openid, error);
+      counts[openid] = 0;
+    }
+  }));
+  return counts;
+};
+
 const getOpenid = () => cloud.getWXContext().OPENID;
 const normalizeName = (value) => String(value || "").trim().toLocaleLowerCase();
 const getStableDocumentId = (...parts) => crypto.createHash("sha256").update(parts.map((item) => String(item || "")).join("\u0000")).digest("hex").slice(0, 24);
@@ -192,8 +234,10 @@ const ensureUser = async (profile = {}) => {
     openid,
     nickName: String(profile.nickName || existing?.nickName || "微信用户").slice(0, 32),
     avatarUrl: String(profile.avatarUrl || existing?.avatarUrl || ""),
+    registered: profile.registered === true || existing?.registered === true,
     updatedAt: now
   };
+  if (profile.registered === true && !existing?.registered) userData.registeredAt = now;
   const createdAt = existing?.createdAt || now;
   // 所有并发登录最终写入同一确定性文档；遗留随机 ID 记录只在新文档落库后清理。
   await db.collection("users").doc(userId).set({ data: { ...userData, createdAt } });
@@ -211,6 +255,30 @@ const ensureUser = async (profile = {}) => {
 const toClientUser = (user) => {
   if (!user) return null;
   return { nickName: user.nickName || "微信用户", avatarUrl: user.avatarUrl || "" };
+};
+
+// 是否已完成显式登录授权：仅 login 动作会把 registered 置为 true
+const isRegisteredUser = (user) => Boolean(user && user.registered === true);
+
+const getLoginState = async () => {
+  const user = await getUser(getOpenid());
+  const loggedIn = isRegisteredUser(user);
+  return {
+    success: true,
+    loggedIn,
+    // 未登录时也返回历史资料，便于登录页预填昵称和头像
+    user: user ? toClientUser(user) : null
+  };
+};
+
+// 显式登录：写入用户资料并标记登录态，同步刷新各账本成员展示信息
+const login = async (event) => {
+  const user = await ensureUser({ nickName: event.nickName, avatarUrl: event.avatarUrl, registered: true });
+  const memberships = await db.collection("family_members").where({ openid: user.openid, status: "active" }).get();
+  await Promise.all(memberships.data.map((member) => db.collection("family_members").doc(member._id).update({
+    data: { nickName: user.nickName, avatarUrl: user.avatarUrl, updatedAt: new Date() }
+  })));
+  return { success: true, user: toClientUser(user) };
 };
 
 const toClientMember = (member) => ({
@@ -387,6 +455,11 @@ const ensureInitialFamilyInvite = async (familyId, creatorOpenid) => {
 };
 
 const initUser = async (event) => {
+  // 未登录时不写入任何业务数据：不创建账本、不创建成员关系
+  const existingUser = await getUser(getOpenid());
+  if (!isRegisteredUser(existingUser)) {
+    return { success: true, loggedIn: false, user: existingUser ? toClientUser(existingUser) : null, family: null };
+  }
   const user = await ensureUser(event.profile);
   const pendingInviteCode = String(event.inviteCode || "").trim().toUpperCase();
   if (pendingInviteCode) {
@@ -399,6 +472,7 @@ const initUser = async (event) => {
       if (!existing && members.length >= MAX_FAMILY_MEMBERS) throw new Error("该账本成员已达上限");
       return {
         success: true,
+        loggedIn: true,
         user: toClientUser(user),
         family: null,
         pendingInvite: {
@@ -413,6 +487,7 @@ const initUser = async (event) => {
       console.warn("启动邀请码无效，等待客户端处理下一条邀请", error.message);
       return {
         success: true,
+        loggedIn: true,
         user: toClientUser(user),
         family: null,
         invalidInvite: {
@@ -453,16 +528,18 @@ const initUser = async (event) => {
       await finishDefaultFamilyInitialization(user.openid, family.id, "complete");
     }
   }
-  return { success: true, user: toClientUser(user), family };
+  return { success: true, loggedIn: true, user: toClientUser(user), family };
 };
 
 const listFamilies = async () => {
   const openid = getOpenid();
   const memberships = await getValidMemberships(openid);
+  const month = getCurrentMonth();
   const families = await Promise.all(memberships.map(async ({ member, family }) => {
     const activeMembers = await getFamilyMembers(family._id, "active");
     const admin = activeMembers.find((item) => item.role === "admin");
     const isOwner = family.adminOpenid === openid;
+    const monthBillCount = await countFamilyMonthBills(family._id, month);
     return {
       id: family._id,
       name: family.name,
@@ -470,6 +547,8 @@ const listFamilies = async () => {
       role: member.role,
       adminName: admin?.nickName || "管理员",
       isOwner,
+      monthBillCount,
+      maxMemberCount: MAX_FAMILY_MEMBERS,
       createdAt: family.createdAt
     };
   }));
@@ -511,7 +590,8 @@ const createFamily = async (event) => {
   await initFamilyCategoriesAndAccounts(familyResult._id);
   await ensureInitialFamilyInvite(familyResult._id, user.openid);
   await writeOperationLog(familyResult._id, "family.create", familyResult._id, {});
-  return { success: true, family: { id: familyResult._id, name, role: "admin", memberId } };
+  // 新建账本的创建者即管理员，isOwner / adminName 必须返回，避免前端显示成“成员”
+  return { success: true, family: { id: familyResult._id, name, role: "admin", memberId, isOwner: true, adminName: user.nickName || "管理员", created: true } };
 };
 
 const renameFamily = async (event) => {
@@ -573,11 +653,26 @@ const getFamilyDetail = async (event) => {
   const family = await getFamily(event.familyId);
   const members = await getFamilyMembers(event.familyId, "active");
   const admin = members.find((item) => item.role === "admin");
+  const month = getCurrentMonth();
+  const [monthBillCount, billCounts] = await Promise.all([
+    countFamilyMonthBills(family._id, month),
+    countMemberBills(family._id, members.map((item) => item.openid))
+  ]);
   return {
     success: true,
-    family: { id: family._id, name: family.name, role: member.role, memberId: member._id, isOwner: family.adminOpenid === openid, adminName: admin?.nickName || "管理员" },
+    family: {
+      id: family._id,
+      name: family.name,
+      role: member.role,
+      memberId: member._id,
+      isOwner: family.adminOpenid === openid,
+      adminName: admin?.nickName || "管理员",
+      memberCount: members.length,
+      maxMemberCount: MAX_FAMILY_MEMBERS,
+      monthBillCount
+    },
     role: member.role,
-    members: members.map(toClientMember)
+    members: members.map((item) => ({ ...toClientMember(item), billCount: billCounts[item.openid] || 0 }))
   };
 };
 
@@ -826,6 +921,8 @@ const cancelAccount = async () => {
 const main = async (event) => {
   await ensureCollections();
   switch (event.action || event.type) {
+    case "getLoginState": return await getLoginState();
+    case "login": return await login(event);
     case "initUser": return await initUser(event);
     case "listFamilies": return await listFamilies();
     case "createFamily": return await createFamily(event);
@@ -898,7 +995,8 @@ const createDefaultFamily = async (user, requestedFamilyId = "") => {
   await db.collection("families").doc(familyId).update({ data: { activeMemberCount: 1, membershipRevision: Number(family.membershipRevision || 0) + 1, updatedAt: now } });
   await initFamilyCategoriesAndAccounts(familyId);
   await ensureInitialFamilyInvite(familyId, user.openid);
-  return { id: familyId, name: family.name || name, role: "admin", memberId, created: true };
+  // isOwner / adminName 必须一并返回，否则前端会把创建者显示成“成员”
+  return { id: familyId, name: family.name || name, role: "admin", memberId, isOwner: true, adminName: user.nickName || "管理员", created: true };
 };
 
 // 仅用于本地单元测试暴露的纯函数引用；不改变云端 main 行为。

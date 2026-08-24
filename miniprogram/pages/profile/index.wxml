@@ -6,7 +6,7 @@
       <text class="user-name">{{nickName}}</text>
       <view class="user-family-row">
         <text class="user-family">📦 {{familyName}}</text>
-        <text class="user-family-role {{isOwner ? 'owner' : 'member'}}">{{isOwner ? '我的' : (familyAdminName ? familyAdminName + '的' : '成员')}}</text>
+        <text wx:if="{{roleReady}}" class="user-family-role {{isOwner ? 'owner' : 'member'}}">{{isOwner ? '我的' : (familyAdminName ? familyAdminName + '的' : '成员')}}</text>
       </view>
     </view>
   </view>
