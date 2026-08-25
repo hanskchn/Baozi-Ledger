@@ -24,6 +24,24 @@
     </view>
   </view>
   <text class="tip">点任意一行即切换当前账本并返回。</text>
+
+  <view class="card recoverable-card" wx:if="{{recoverableFamilies.length > 0}}">
+    <view class="card-head">
+      <text class="card-title">可还原账本</text>
+      <text class="card-extra">30 天内可还原</text>
+    </view>
+    <view class="ledger-item ledger-item-dissolved" wx:for="{{recoverableFamilies}}" wx:key="id">
+      <view class="ledger-icon ledger-icon-dissolved">{{item.iconText}}</view>
+      <view class="ledger-info">
+        <view class="ledger-line">
+          <text class="ledger-name">{{item.name}}</text>
+          <text class="badge badge-dissolved">已解散</text>
+        </view>
+        <text class="ledger-meta ledger-meta-warn">{{item.daysRemaining}} 天后永久删除 · 点击还原</text>
+      </view>
+      <view class="restore-btn" data-id="{{item.id}}" catchtap="restoreFamily">还原</view>
+    </view>
+  </view>
 </view>
 
 <view class="footer">

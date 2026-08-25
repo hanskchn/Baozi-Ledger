@@ -181,9 +181,18 @@ exports.main = async (event, context) => {
 
 ## 开发注意事项
 
-- 修改云函数后需在微信开发者工具中右键「上传并部署」
+- 修改云函数后由 Codex 通过微信开发者工具 CLI 部署：
+  `/Applications/wechatwebdevtools.app/Contents/MacOS/cli cloud functions deploy --project <项目路径> --env cloud1-d1gq4g6a7c2911b56 --names <函数名> --remote-npm-install`
 - `envList.js` 和 `app.js` 中的 `env` 需填入实际云环境 ID
 - 新增页面后记得在 `app.json` 注册
 - `lazyCodeLoading: "requiredComponents"` 已开启，组件按需加载
 - 图片资源放 `miniprogram/images/`，分类图标用 Emoji 不需要图片
 - 不要在前端直接读写数据库，一律走云函数
+
+## 交付要求
+
+每次完成代码修改后，最终回复必须包含：
+1. **修改清单**：列出所有改动的文件路径（带行号）及每处改动的目的。
+2. **验证清单**：列出需要用户在微信开发者工具/真机上验证的功能点。
+3. **影响范围**：说明改动可能影响到的关联功能或页面，以及未改动但相关的地方。
+4. 涉及云函数改动时，必须由 Codex 完成部署，并在回复中说明部署结果。

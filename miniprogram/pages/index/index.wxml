@@ -6,14 +6,6 @@
     <text>{{errorMessage}}</text>
     <button class="retry-btn" bindtap="retryInitialize">重新尝试</button>
   </view>
-  <view class="invite-panel" wx:elif="{{pendingInvite}}">
-    <text class="invite-title">加入家庭账本</text>
-    <text class="invite-family">{{pendingInvite.familyName}}</text>
-    <text class="invite-meta">管理员 {{pendingInvite.adminName}} · {{pendingInvite.memberCount}} 位成员</text>
-    <text class="invite-desc">加入后可查看该账本已有账单。</text>
-    <button class="invite-confirm" bindtap="confirmPendingInvite">{{pendingInvite.alreadyMember ? '切换到此账本' : '确认加入'}}</button>
-    <view class="invite-actions"><text class="invite-cancel" bindtap="declinePendingInvite">暂不加入</text><text class="invite-remove" bindtap="removePendingInvite">删除邀请</text></view>
-  </view>
   <block wx:else>
   <!-- 昵称仍为默认值时的完善提示：点一次昵称框即可补齐，可手动关闭 -->
   <view class="nickname-tip" wx:if="{{showNicknameTip}}">
@@ -149,5 +141,42 @@
       <text class="welcome-desc">已为你创建「我的家庭账本」，可以开始记下第一笔支出了。支持邀请家人一起记账、查看统计与预算。</text>
       <button class="welcome-btn" bindtap="closeWelcome">开始记账</button>
     </view>
+  </view>
+
+  <!-- 扫码/邀请码加入家庭账本 底部弹层 -->
+  <view class="invite-mask" wx:if="{{pendingInvite}}" bindtap="declinePendingInvite" catchtouchmove="noop"></view>
+  <view class="invite-sheet" wx:if="{{pendingInvite}}" catchtouchmove="noop">
+    <view class="invite-handle"></view>
+    <view class="invite-hero">
+      <view class="invite-badge">✨ 邀请你加入家庭账本</view>
+      <view class="invite-icon">🏠</view>
+      <text class="invite-family-name">{{pendingInvite.familyName}}</text>
+      <text class="invite-already" wx:if="{{pendingInvite.alreadyMember}}">✓ 你已是该账本成员</text>
+    </view>
+    <view class="invite-info">
+      <view class="invite-info-row">
+        <text class="invite-info-label"><text class="invite-info-emoji">👤</text> 管理员</text>
+        <view class="invite-info-value">
+          <image wx:if="{{pendingInvite.adminAvatar}}" class="invite-admin-avatar" src="{{pendingInvite.adminAvatar}}"></image>
+          <text>{{pendingInvite.adminName}}</text>
+        </view>
+      </view>
+      <view class="invite-info-row">
+        <text class="invite-info-label"><text class="invite-info-emoji">👥</text> 成员</text>
+        <view class="invite-info-value">
+          <view class="invite-avatars" wx:if="{{pendingInvite.memberPreviews.length > 0}}">
+            <image wx:for="{{pendingInvite.memberPreviews}}" wx:key="nickName" wx:for-item="m" class="invite-member-avatar" src="{{m.avatarUrl || '/images/icons/avatar.png'}}"></image>
+          </view>
+          <text>{{pendingInvite.memberCount}} 位成员</text>
+        </view>
+      </view>
+      <view class="invite-info-row">
+        <text class="invite-info-label"><text class="invite-info-emoji">📊</text> 累计账单</text>
+        <text class="invite-info-value">{{pendingInvite.totalBillCount}} 笔</text>
+      </view>
+    </view>
+    <text class="invite-desc-text">加入后你可以查看和记录该账本的收支，与家人一起管理家庭财务。</text>
+    <button class="invite-btn-primary" bindtap="confirmPendingInvite">{{pendingInvite.alreadyMember ? '切换到此账本' : '确认加入'}}</button>
+    <button class="invite-btn-secondary" bindtap="declinePendingInvite">暂不加入</button>
   </view>
 </view>

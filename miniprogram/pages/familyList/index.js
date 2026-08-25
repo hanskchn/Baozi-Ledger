@@ -3,6 +3,7 @@ const app = getApp();
 Page({
   data: {
     families: [],
+    recoverableFamilies: [],
     currentFamilyId: "",
     loading: false
   },
@@ -30,6 +31,10 @@ Page({
         families: (result.families || []).map((item) => ({
           ...item,
           totalBillCount: item.totalBillCount || 0,
+          iconText: String(item.name || "账").trim().slice(0, 1)
+        })),
+        recoverableFamilies: (result.recoverableFamilies || []).map((item) => ({
+          ...item,
           iconText: String(item.name || "账").trim().slice(0, 1)
         })),
         currentFamilyId: app.globalData.currentFamilyId || wx.getStorageSync("currentFamilyId") || ""
@@ -85,6 +90,32 @@ Page({
     } catch (error) {
       wx.hideLoading();
       wx.showToast({ title: error.message || "创建失败", icon: "none" });
+    }
+  },
+
+  async restoreFamily(e) {
+    const familyId = e.currentTarget.dataset.id;
+    if (!familyId) return;
+    const modal = await new Promise((resolve) => wx.showModal({
+      title: "还原账本",
+      content: "还原后账本将恢复正常使用，其他成员需要重新邀请加入。确定还原吗？",
+      confirmText: "还原",
+      confirmColor: "#FF6B35",
+      success: resolve
+    }));
+    if (!modal.confirm) return;
+    wx.showLoading({ title: "还原中", mask: true });
+    try {
+      await this.callFunction("restoreFamily", { familyId });
+      const detail = await this.callFunction("getFamilyDetail", { familyId });
+      app.onFamilyChange(detail.family);
+      app.initializePromise = null;
+      wx.hideLoading();
+      wx.showToast({ title: "还原成功" });
+      setTimeout(() => this.loadFamilies(), 400);
+    } catch (error) {
+      wx.hideLoading();
+      wx.showToast({ title: error.message || "还原失败", icon: "none" });
     }
   }
 });

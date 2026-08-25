@@ -34,17 +34,21 @@
   <view class="card" id="inviteCard">
     <view class="card-head">
       <text class="card-title">邀请与加入</text>
-      <text class="card-extra" wx:if="{{isAdmin && inviteCode}}" bindtap="regenerateInvite">7 天内有效 ›</text>
+      <text class="card-extra {{inviteExpired ? 'card-extra-danger' : ''}}" wx:if="{{isAdmin && (inviteCode || inviteExpired)}}" bindtap="onInviteExtraTap">{{inviteExpired ? '已过期，重新生成 ›' : inviteExpireText + ' ›'}}</text>
     </view>
 
-    <view class="invite-box" wx:if="{{isAdmin}}">
+    <view class="invite-box" wx:if="{{isAdmin && !inviteExpired}}">
       <view class="invite-left">
-        <text class="invite-label">我的账本邀请码</text>
+        <text class="invite-label">我的账本邀请码 · {{inviteExpireText}}</text>
         <text class="invite-code">{{inviteCode || '————————'}}</text>
       </view>
       <view class="invite-copy" bindtap="copyInviteCode">复制</view>
     </view>
-    <text class="invite-tip" wx:if="{{isAdmin}}">把邀请码发给家人，对方在「输入邀请码」处填入即可加入</text>
+    <view class="invite-expired" wx:if="{{isAdmin && inviteExpired}}">
+      <text class="invite-expired-text">邀请码已过期，生成新码后旧码立即失效</text>
+      <view class="invite-generate-btn" bindtap="onGenerateInvite">生成新邀请码</view>
+    </view>
+    <text class="invite-tip" wx:if="{{isAdmin && !inviteExpired}}">把邀请码发给家人，对方在「输入邀请码」处填入即可加入</text>
 
     <view class="join-row" bindtap="openJoinInput">
       <view class="join-left">
@@ -95,12 +99,22 @@
   <text class="sheet-title">邀请家人加入「{{currentFamilyName}}」</text>
   <view class="invite-box invite-box-sheet">
     <view class="invite-left">
-      <text class="invite-label">邀请码 · 7 天内有效</text>
+      <text class="invite-label">邀请码 · {{inviteExpireText || '7 天内有效'}}</text>
       <text class="invite-code">{{inviteCode}}</text>
     </view>
   </view>
   <text class="invite-tip invite-tip-center">把邀请码发给家人，对方在「输入邀请码」处填入即可加入</text>
+  <view class="qrcode-section">
+    <view class="qrcode-wrap" wx:if="{{qrcodePath}}">
+      <image class="qrcode-img" src="{{qrcodePath}}" mode="aspectFit" show-menu-by-longpress="{{true}}"></image>
+    </view>
+    <view class="qrcode-loading" wx:elif="{{qrcodeLoading}}">
+      <text>二维码生成中…</text>
+    </view>
+    <view class="qrcode-tip" wx:if="{{qrcodePath}}">微信扫一扫或长按识别加入账本</view>
+  </view>
   <view class="primary-btn" bindtap="copyInviteCode">复制邀请码</view>
+  <view class="sheet-item" bindtap="saveQrcode" wx:if="{{qrcodePath}}">保存二维码到相册</view>
   <view class="sheet-item" bindtap="regenerateInvite">重新生成邀请码</view>
   <view class="sheet-cancel" bindtap="closeInviteSheet">关闭</view>
 </view>
@@ -112,6 +126,7 @@
   <view class="sheet-item" wx:if="{{isAdmin}}" bindtap="renameCurrentFamily">修改账本名称</view>
   <view class="sheet-item" wx:if="{{isAdmin}}" bindtap="regenerateInvite">重新生成邀请码</view>
   <view class="sheet-item" wx:if="{{isAdmin && inviteCode}}" bindtap="revokeInvite">撤销当前邀请码</view>
+  <view class="sheet-item sheet-danger" wx:if="{{isAdmin}}" bindtap="dissolveFamily">解散账本</view>
   <view class="sheet-item sheet-danger" wx:if="{{!isAdmin}}" bindtap="leaveFamily">退出当前账本</view>
   <view class="sheet-cancel" bindtap="closeFamilySettings">取消</view>
 </view>

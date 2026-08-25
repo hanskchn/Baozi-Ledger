@@ -43,7 +43,7 @@
   <!-- 饼图 + 右侧图例（并排） -->
   <view wx:if="{{categoryStats.length > 0 && chartMode === 'pie'}}" class="chart-body">
     <view class="chart-pie">
-      <pie-chart slices="{{categorySlicesForChart}}" title="{{chartType === 'expense' ? '总支出' : '总收入'}}" category-count="{{categoryStats.length}}" scheme="{{chartType}}" bindtap="onPieTap" />
+      <pie-chart id="pieChart" slices="{{categorySlicesForChart}}" title="{{chartType === 'expense' ? '总支出' : '总收入'}}" category-count="{{categoryStats.length}}" scheme="{{chartType}}" bindtap="onPieTap" />
     </view>
     <scroll-view scroll-y class="chart-legend">
       <view class="legend-inner">
@@ -78,7 +78,18 @@
     </view>
   </view>
 </view>
-  <view class="chart-card"><view class="chart-title">收支趋势</view><view wx:if="{{loading && dailyTrend.length === 0}}" class="chart-skeleton"><view class="skeleton-trend"></view></view><view wx:elif="{{dailyTrend.length === 0}}" class="empty-tip">当前范围暂无账单</view><view wx:else class="trend-chart-wrap"><trend-chart data="{{dailyTrend}}" /></view></view></view>
+  <view class="chart-card">
+    <view class="chart-title">
+      <text>收支趋势</text>
+      <text class="chart-tip">{{trendGranularity === 'day' ? '按日' : trendGranularity === 'month' ? '按月' : '按年'}}</text>
+    </view>
+    <view class="trend-card-body">
+      <view wx:if="{{loading && dailyTrend.length === 0}}" class="chart-skeleton"><view class="skeleton-trend"></view></view>
+      <view wx:elif="{{dailyTrend.length === 0}}" class="empty-tip">当前范围暂无账单</view>
+      <view wx:else class="trend-chart-wrap"><trend-chart id="trendChart" data="{{dailyTrend}}" smooth="{{trendSmooth}}" /></view>
+    </view>
+  </view>
+</view>
 
   <!-- 时间选择弹层 -->
   <view class="time-sheet-mask" wx:if="{{showTimeSheet}}" bindtap="closeTimeSheet"></view>
@@ -111,7 +122,7 @@
             <view class="picker-field">{{tempDateStart || '开始日期'}}</view>
           </picker>
           <text class="range-sep">至</text>
-          <picker mode="date" value="{{tempDateEnd}}" bindchange="onTempEndChange">
+          <picker mode="date" value="{{tempDateEnd}}" start="{{tempDateStart}}" bindchange="onTempEndChange">
             <view class="picker-field">{{tempDateEnd || '结束日期'}}</view>
           </picker>
         </view>

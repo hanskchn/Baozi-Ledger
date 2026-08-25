@@ -9,7 +9,7 @@ const COLORS_EXPENSE = ["#FF8C42", "#F6B84C", "#E5784B", "#C96B45", "#A98254", "
 const COLORS_INCOME = ["#4CAF50", "#66BB6A", "#81C784", "#A5D6A7", "#43A047", "#7CB342", "#388E3C", "#2E7D32", "#9CCC65", "#AED581"];
 
 Page({
-  data: { currentMonth: "", dateStart: "", dateEnd: "", tempMonth: "", tempDateStart: "", tempDateEnd: "", showTimeSheet: false, periodMode: "month", timeMode: "month", quick: "thisMonth", displayMonth: "", monthExpense: "0.00", monthIncome: "0.00", monthBalance: "0.00", expenseCategoryStats: [], incomeCategoryStats: [], categoryStats: [], dailyTrend: [], categorySlicesForChart: [], chartType: "expense", chartMode: "pie", loading: true, members: [], accounts: [], memberOptions: ["全部成员"], accountOptions: ["全部账户"], memberPickerIndex: 0, accountPickerIndex: 0, filterMember: "", filterMemberLabel: "", filterAccount: "", loadedFamilyId: "" },
+  data: { currentMonth: "", dateStart: "", dateEnd: "", tempMonth: "", tempDateStart: "", tempDateEnd: "", showTimeSheet: false, periodMode: "month", timeMode: "month", quick: "thisMonth", displayMonth: "", monthExpense: "0.00", monthIncome: "0.00", monthBalance: "0.00", expenseCategoryStats: [], incomeCategoryStats: [], categoryStats: [], dailyTrend: [], categorySlicesForChart: [], chartType: "expense", chartMode: "pie", loading: true, members: [], accounts: [], memberOptions: ["全部成员"], accountOptions: ["全部账户"], memberPickerIndex: 0, accountPickerIndex: 0, filterMember: "", filterMemberLabel: "", filterAccount: "", loadedFamilyId: "", trendGranularity: "day", trendSmooth: true },
   onLoad() {
     const shifted = new Date(Date.now() + 8 * 60 * 60 * 1000);
     const month = shifted.getUTCFullYear() + "-" + String(shifted.getUTCMonth() + 1).padStart(2, "0");
@@ -43,9 +43,11 @@ Page({
   async loadOptions() { try { await app.ensureInitialized(); const familyId = app.globalData.currentFamilyId; if (!familyId) return; if (this.data.loadedFamilyId && this.data.loadedFamilyId !== familyId) this.setData({ filterMember: "", filterMemberLabel: "", filterAccount: "", memberPickerIndex: 0, accountPickerIndex: 0 }); const res = await wx.cloud.callFunction({ name: "accountingFunctions", data: { action: "listFormOptions", familyId } }); const members = res.result?.members || []; const accounts = res.result?.accounts || []; this.setData({ members, accounts, memberOptions: ["全部成员"].concat(members.map((item) => item.nickName || "微信用户")), accountOptions: ["全部账户"].concat(accounts.map((item) => item.name)), loadedFamilyId: familyId }); } catch (error) { console.warn("加载统计筛选项失败", error); } },
   async loadStats(options) {
     const forceRefresh = options && options.forceRefresh === true;
+    const requestId = (this._statsRequestId = (this._statsRequestId || 0) + 1);
     this.setData({ loading: true });
     try {
       await app.ensureInitialized();
+      if (requestId !== this._statsRequestId) return;
       // 缓存命中：60s 内 + 非 forceRefresh 直接渲染并刷新图表
       const cacheKey = this.buildStatsCacheKey();
       if (!forceRefresh && cacheKey) {
@@ -53,42 +55,43 @@ Page({
         try { cached = wx.getStorageSync(cacheKey); } catch (error) { cached = null; }
         if (cached && cached.payload && Date.now() - cached.ts < STATS_CACHE_TTL_MS) {
           const p = cached.payload;
+          if (requestId !== this._statsRequestId) return;
           this.setData({
             monthExpense: p.monthExpense, monthIncome: p.monthIncome, monthBalance: p.monthBalance,
             expenseCategoryStats: p.expense, incomeCategoryStats: p.income, categoryStats: p.categories,
-            dailyTrend: p.trend
+            dailyTrend: p.trend, trendGranularity: p.granularity || "day", trendSmooth: p.granularity === "day"
           });
           return;
         }
       }
-      const data = { action: "getStats", familyId: app.globalData.currentFamilyId };
-      if (this.data.periodMode === "all") {
-        data.allTime = true;
-        // 兜底：部分云函数版本未识别 allTime，用宽 dateRange 兼容
-        data.dateStart = data.dateStart || "0000-01-01";
-        data.dateEnd = data.dateEnd || "9999-12-31";
-      } else if (this.data.periodMode === "custom") { data.dateStart = this.data.dateStart; data.dateEnd = this.data.dateEnd; }
-      else data.month = this.data.currentMonth;
-      data.memberId = this.data.filterMember;
-      data.account = this.data.filterAccount;
-      const response = await wx.cloud.callFunction({ name: "accountingFunctions", data });
-      if (!response.result?.success) throw new Error(response.result?.message || "加载失败");
-      const stats = response.result;
+
+      const granularity = this._resolveGranularity();
+      const stats = await this._fetchStats(granularity);
+      if (requestId !== this._statsRequestId) return;
+
+      // 全部时间按月查询后，若跨度超过 3 年则切换为按年重新查询
+      let finalGranularity = granularity;
+      let rawTrend = stats.dailyTrend || [];
+      if (granularity === "month" && this.data.periodMode === "all" && rawTrend.length >= 2) {
+        const firstMonth = rawTrend[0].date.slice(0, 7);
+        const lastMonth = rawTrend[rawTrend.length - 1].date.slice(0, 7);
+        const spanMonths = (Number(lastMonth.slice(0, 4)) - Number(firstMonth.slice(0, 4))) * 12
+          + (Number(lastMonth.slice(5, 7)) - Number(firstMonth.slice(5, 7))) + 1;
+        if (spanMonths > 36) {
+          finalGranularity = "year";
+          const yearStats = await this._fetchStats("year");
+          if (requestId !== this._statsRequestId) return;
+          rawTrend = yearStats.dailyTrend || [];
+          // 总额仍以第一次查询为准（分类聚合不受粒度影响），只替换趋势数据
+        }
+      }
+
       const expense = stats.expenseCategoryStats || stats.categoryStats || [];
       const income = stats.incomeCategoryStats || [];
       const categories = this.decorateCategories(this.data.chartType === "expense" ? expense : income, this.data.chartType);
-      // 趋势图三档自适应（避免长跨度下 x 轴过密 / label 重叠）
-      //   日数据 ≤ 60  → 按日，label "M/D"
-      //   61 ~ 730    → 按月，label "M月"
-      //   > 730       → 按年，label "YYYY年"
-      const rawDaily = stats.dailyTrend || [];
-      const trend = rawDaily.length > 730
-        ? this._aggregateTrendByYear(rawDaily)
-        : rawDaily.length > 60
-          ? this._aggregateTrendByMonth(rawDaily)
-          : rawDaily.map((item) => ({ ...item, label: Number(item.date.slice(5, 7)) + "/" + Number(item.date.slice(8, 10)) }));
+      const trend = this._zeroFillTrend(rawTrend, finalGranularity);
       const newSlices = this.groupForPie(this.data.chartType === "expense" ? expense : income);
-      this.setData({ monthExpense: Number(stats.totalExpense || 0).toFixed(2), monthIncome: Number(stats.totalIncome || 0).toFixed(2), monthBalance: Number(stats.balance || 0).toFixed(2), expenseCategoryStats: expense, incomeCategoryStats: income, categoryStats: categories, dailyTrend: trend, categorySlicesForChart: newSlices });
+      this.setData({ monthExpense: Number(stats.totalExpense || 0).toFixed(2), monthIncome: Number(stats.totalIncome || 0).toFixed(2), monthBalance: Number(stats.balance || 0).toFixed(2), expenseCategoryStats: expense, incomeCategoryStats: income, categoryStats: categories, dailyTrend: trend, categorySlicesForChart: newSlices, trendGranularity: finalGranularity, trendSmooth: finalGranularity === "day" });
       // 写缓存
       if (cacheKey) {
         try {
@@ -96,7 +99,7 @@ Page({
             ts: Date.now(),
             payload: {
               monthExpense: this.data.monthExpense, monthIncome: this.data.monthIncome, monthBalance: this.data.monthBalance,
-              expense, income, categories, trend
+              expense, income, categories, trend, granularity: finalGranularity
             }
           });
         } catch (storageError) {
@@ -104,7 +107,37 @@ Page({
         }
       }
     } catch (error) { wx.showToast({ title: error.message || "加载统计失败", icon: "none" }); }
-    finally { this.setData({ loading: false }); }
+    finally { if (requestId === this._statsRequestId) this.setData({ loading: false }); }
+  },
+
+  async _fetchStats(trendGranularity) {
+    const data = { action: "getStats", familyId: app.globalData.currentFamilyId, trendGranularity };
+    if (this.data.periodMode === "all") {
+      data.allTime = true;
+      data.dateStart = "0000-01-01";
+      data.dateEnd = "9999-12-31";
+    } else if (this.data.periodMode === "custom") {
+      data.dateStart = this.data.dateStart;
+      data.dateEnd = this.data.dateEnd;
+    } else {
+      data.month = this.data.currentMonth;
+    }
+    data.memberId = this.data.filterMember;
+    data.account = this.data.filterAccount;
+    const response = await wx.cloud.callFunction({ name: "accountingFunctions", data });
+    if (!response.result?.success) throw new Error(response.result?.message || "加载失败");
+    return response.result;
+  },
+
+  _resolveGranularity() {
+    if (this.data.periodMode === "month") return "day";
+    if (this.data.periodMode === "all") return "month";
+    const { dateStart, dateEnd } = this.data;
+    if (!dateStart || !dateEnd) return "day";
+    const startTs = new Date(dateStart + "T00:00:00+08:00").getTime();
+    const endTs = new Date(dateEnd + "T00:00:00+08:00").getTime();
+    const daySpan = Math.round((endTs - startTs) / 86400000) + 1;
+    return daySpan <= 60 ? "day" : "month";
   },
 
   onFamilyChanged() {
@@ -181,7 +214,17 @@ Page({
       timeMode: this.data.periodMode === "custom" ? "range" : "month"
     });
   },
-  closeTimeSheet() { this.setData({ showTimeSheet: false }); },
+  closeTimeSheet() {
+    this.setData({ showTimeSheet: false }, () => {
+      // hidden 切换后部分机型 canvas 内容丢失，主动重绘
+      wx.nextTick(() => {
+        const pie = this.selectComponent("#pieChart");
+        const trend = this.selectComponent("#trendChart");
+        if (pie && pie.redraw) pie.redraw();
+        if (trend && trend.redraw) trend.redraw();
+      });
+    });
+  },
   stopPropagation() {},
   selectQuick(e) {
     const key = e.currentTarget.dataset.key;
@@ -206,7 +249,8 @@ Page({
       this.setData({ quick: "custom", timeMode: "month" });
     } else if (key === "customRange") {
       const today = this.getShanghaiDate();
-      this.setData({ quick: "custom", timeMode: "range", tempDateStart: this.data.tempDateStart || this.data.currentMonth + "-01" || today, tempDateEnd: this.data.tempDateEnd || today });
+      const fallbackStart = this.data.currentMonth ? this.data.currentMonth + "-01" : today;
+      this.setData({ quick: "custom", timeMode: "range", tempDateStart: this.data.tempDateStart || fallbackStart, tempDateEnd: this.data.tempDateEnd || today });
     }
   },
   onTempMonthChange(e) {
@@ -215,6 +259,10 @@ Page({
   },
   onTempStartChange(e) {
     const value = e.detail.value;
+    if (this.data.tempDateEnd && value > this.data.tempDateEnd) {
+      wx.showToast({ title: "开始日期不能晚于结束日期", icon: "none" });
+      return;
+    }
     this.setData({ tempDateStart: value, quick: "custom", timeMode: "range" });
     if (this.data.tempDateEnd) {
       this._applyTime({ periodMode: "custom", currentMonth: "", displayMonth: this._formatRange(value, this.data.tempDateEnd), dateStart: value, dateEnd: this.data.tempDateEnd, quick: "custom", timeMode: "range" });
@@ -223,6 +271,10 @@ Page({
   },
   onTempEndChange(e) {
     const value = e.detail.value;
+    if (this.data.tempDateStart && value < this.data.tempDateStart) {
+      wx.showToast({ title: "结束日期不能早于开始日期", icon: "none" });
+      return;
+    }
     this.setData({ tempDateEnd: value, quick: "custom", timeMode: "range" });
     if (this.data.tempDateStart) {
       this._applyTime({ periodMode: "custom", currentMonth: "", displayMonth: this._formatRange(this.data.tempDateStart, value), dateStart: this.data.tempDateStart, dateEnd: value, quick: "custom", timeMode: "range" });
@@ -237,29 +289,98 @@ Page({
     const now = new Date(Date.now() + 8 * 60 * 60 * 1000);
     return now.getUTCFullYear() + "-" + String(now.getUTCMonth() + 1).padStart(2, "0");
   },
-  _aggregateTrendByMonth(daily) {
-    const buckets = {};
-    daily.forEach((item) => {
-      const ym = item.date.slice(0, 7);
-      if (!buckets[ym]) buckets[ym] = { date: ym + "-01", expense: 0, income: 0 };
-      buckets[ym].expense += Number(item.expense || 0);
-      buckets[ym].income += Number(item.income || 0);
-    });
-    return Object.values(buckets)
-      .sort((a, b) => a.date.localeCompare(b.date))
-      .map((item) => ({ ...item, label: Number(item.date.slice(5, 7)) + "月" }));
+  _zeroFillTrend(rawData, granularity) {
+    if (!rawData || rawData.length === 0) return [];
+    const today = this.getShanghaiDate();
+    const map = {};
+    rawData.forEach((item) => { map[item.date] = item; });
+
+    if (granularity === "year") {
+      const startY = Number(rawData[0].date.slice(0, 4));
+      const endY = Math.max(Number(rawData[rawData.length - 1].date.slice(0, 4)), Number(today.slice(0, 4)));
+      const result = [];
+      for (let y = startY; y <= endY; y++) {
+        const key = String(y);
+        const item = map[key] || { date: key, expense: 0, income: 0 };
+        result.push({ ...item, label: key, fullLabel: key + "年" });
+      }
+      return result;
+    }
+
+    if (granularity === "month") {
+      let startYM, endYM;
+      if (this.data.periodMode === "all") {
+        startYM = rawData[0].date.slice(0, 7);
+        endYM = rawData[rawData.length - 1].date.slice(0, 7);
+      } else {
+        const bounds = this._getRangeBounds();
+        startYM = bounds.start.slice(0, 7);
+        endYM = bounds.end.slice(0, 7);
+      }
+      if (this.data.periodMode === "all") {
+        const lastDataYM = rawData[rawData.length - 1].date.slice(0, 7);
+        if (endYM < lastDataYM) endYM = lastDataYM;
+      }
+      if (startYM > endYM) return [];
+      const [sy, sm] = startYM.split("-").map(Number);
+      const [ey, em] = endYM.split("-").map(Number);
+      const crossYear = sy !== ey;
+      const result = [];
+      let y = sy, m = sm;
+      while (y < ey || (y === ey && m <= em)) {
+        const mm = String(m).padStart(2, "0");
+        const key = y + "-" + mm;
+        const item = map[key] || { date: key, expense: 0, income: 0 };
+        result.push({
+          ...item,
+          label: crossYear ? String(y).slice(2) + "/" + m : m + "月",
+          fullLabel: y + "年" + m + "月"
+        });
+        m++;
+        if (m > 12) { m = 1; y++; }
+      }
+      return result;
+    }
+
+    // day
+    const bounds = this._getRangeBounds();
+    let startStr = bounds.start;
+    let endStr = bounds.end;
+    if (this.data.periodMode === "all") {
+      startStr = rawData[0].date.slice(0, 10);
+      endStr = rawData[rawData.length - 1].date.slice(0, 10);
+      if (endStr < today) endStr = today;
+    }
+    if (startStr > endStr) return [];
+    const crossYear = startStr.slice(0, 4) !== endStr.slice(0, 4);
+    const result = [];
+    const cur = new Date(startStr + "T00:00:00Z");
+    const end = new Date(endStr + "T00:00:00Z");
+    while (cur.getTime() <= end.getTime()) {
+      const y = cur.getUTCFullYear();
+      const m = cur.getUTCMonth() + 1;
+      const d = cur.getUTCDate();
+      const key = y + "-" + String(m).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+      const item = map[key] || { date: key, expense: 0, income: 0 };
+      result.push({
+        ...item,
+        label: crossYear ? String(y).slice(2) + "/" + m + "/" + d : m + "/" + d,
+        fullLabel: y + "年" + m + "月" + d + "日"
+      });
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+    return result;
   },
-  _aggregateTrendByYear(daily) {
-    const buckets = {};
-    daily.forEach((item) => {
-      const y = item.date.slice(0, 4);
-      if (!buckets[y]) buckets[y] = { date: y + "-01-01", expense: 0, income: 0 };
-      buckets[y].expense += Number(item.expense || 0);
-      buckets[y].income += Number(item.income || 0);
-    });
-    return Object.values(buckets)
-      .sort((a, b) => a.date.localeCompare(b.date))
-      .map((item) => ({ ...item, label: item.date.slice(0, 4) + "年" }));
+  _getRangeBounds() {
+    if (this.data.periodMode === "month" && this.data.currentMonth) {
+      const [y, m] = this.data.currentMonth.split("-").map(Number);
+      const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+      return {
+        start: y + "-" + String(m).padStart(2, "0") + "-01",
+        end: y + "-" + String(m).padStart(2, "0") + "-" + String(lastDay).padStart(2, "0")
+      };
+    }
+    return { start: this.data.dateStart, end: this.data.dateEnd };
   },
   _formatMonth(month) {
     if (!month) return "全部时间";

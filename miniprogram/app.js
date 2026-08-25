@@ -8,6 +8,7 @@ App({
   },
 
   onLaunch() {
+    this._sessionDeclinedCodes = new Set();
     if (!wx.cloud) {
       console.error("请使用 2.2.3 或以上的基础库以使用云能力");
     } else {
@@ -16,7 +17,7 @@ App({
         traceUser: true
       });
       const launchOptions = wx.getLaunchOptionsSync ? wx.getLaunchOptionsSync() : {};
-      const inviteCode = launchOptions?.query?.inviteCode || launchOptions?.query?.code;
+      const inviteCode = this.extractInviteCode(launchOptions);
       if (inviteCode) this.enqueuePendingInvite(inviteCode);
       // 先用本地缓存复原 userInfo / currentFamily，让首页 onShow 能立即拿到数据渲染骨架。
       this.hydrateGlobalDataFromStorage();
@@ -111,8 +112,8 @@ App({
   onShow(options) {
     // 处理从小程序分享/场景值重新进入时携带的邀请码（App 已在后台运行场景）
     if (!wx.cloud) return;
-    const query = (options && options.query) || (wx.getLaunchOptionsSync ? wx.getLaunchOptionsSync().query : {});
-    const inviteCode = query && (query.inviteCode || query.code);
+    const launchOptions = options || (wx.getLaunchOptionsSync ? wx.getLaunchOptionsSync() : {});
+    const inviteCode = this.extractInviteCode(launchOptions);
     if (inviteCode) {
       this.enqueuePendingInvite(inviteCode);
       // 重新初始化以处理新邀请，页面 onShow 中的 ensureInitialized 会复用该流程
@@ -120,9 +121,27 @@ App({
     }
   },
 
+  extractInviteCode(options) {
+    if (!options) return "";
+    if (options.query && (options.query.inviteCode || options.query.code)) {
+      return options.query.inviteCode || options.query.code;
+    }
+    // 小程序码 wxacode.getUnlimited 的 scene 参数在 options.query.scene 中（URL 编码字符串）；
+    // options.scene 是数字场景值（如 1047=扫码），不要混淆。
+    const rawScene = options.query && options.query.scene;
+    if (rawScene) {
+      try {
+        const decoded = decodeURIComponent(rawScene);
+        const match = decoded.match(/i=([A-Z0-9]+)/i);
+        if (match) return match[1].toUpperCase();
+      } catch (e) { /* ignore */ }
+    }
+    return "";
+  },
+
   async initialize() {
     const currentFamilyId = wx.getStorageSync("currentFamilyId") || "";
-    const inviteCode = this.getPendingInviteCodes()[0] || "";
+    const inviteCode = this.getPendingInviteCodes().find((code) => !this._sessionDeclinedCodes.has(code)) || "";
     try {
       const response = await wx.cloud.callFunction({
         name: "ledgerFunctions",
@@ -151,8 +170,17 @@ App({
       } catch (storageError) {
         console.warn("写入缓存失败", storageError);
       }
-      // 用 onFamilyChange 统一更新 + 广播，避免散落在各处的赋值导致页面不同步
-      this.onFamilyChange(result.family || null);
+      // 有待确认邀请时，云函数返回 family=null，不能据此清空当前账本，
+      // 否则用户点"暂不加入"后会丢失正在使用的账本。
+      if (result.pendingInvite) {
+        if (!this.globalData.currentFamilyId) {
+          const cached = wx.getStorageSync("currentFamilyId") || "";
+          if (cached) this.globalData.currentFamilyId = cached;
+        }
+      } else {
+        // 用 onFamilyChange 统一更新 + 广播，避免散落在各处的赋值导致页面不同步
+        this.onFamilyChange(result.family || null);
+      }
       return result;
     } catch (error) {
       this.globalData.currentFamilyId = "";
@@ -282,6 +310,9 @@ App({
   enqueuePendingInvite(code) {
     const normalized = String(code || "").trim().toUpperCase();
     if (!normalized) return;
+    // 新的一次扫码/进入视为用户重新想处理该邀请，清除本次会话内曾拒绝的标记，
+    // 否则重复扫同一个码不会再弹出加入页面（刷新后才恢复）
+    this._sessionDeclinedCodes.delete(normalized);
     const codes = this.getPendingInviteCodes();
     if (!codes.includes(normalized)) codes.push(normalized);
     wx.setStorageSync("pendingInviteCodes", codes);
@@ -291,5 +322,11 @@ App({
     const normalized = String(code || "").trim().toUpperCase();
     const codes = this.getPendingInviteCodes().filter((item) => item !== normalized);
     wx.setStorageSync("pendingInviteCodes", codes);
+    this._sessionDeclinedCodes.delete(normalized);
+  },
+
+  declinePendingInvite(code) {
+    const normalized = String(code || "").trim().toUpperCase();
+    if (normalized) this._sessionDeclinedCodes.add(normalized);
   }
 });

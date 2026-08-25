@@ -1311,7 +1311,7 @@ const listBills = async (event) => {
 };
 
 const getStats = async (event) => {
-  const { familyId, month, year, dateStart, dateEnd, memberId, account, category, includeFuture = false, allTime = false } = event;
+  const { familyId, month, year, dateStart, dateEnd, memberId, account, category, includeFuture = false, allTime = false, trendGranularity = "day" } = event;
   await requireMember(familyId);
   let bounds;
   if (allTime) {
@@ -1352,10 +1352,13 @@ const getStats = async (event) => {
     if (memberOpenid) match.memberOpenid = memberOpenid;
   }
 
+  // 趋势聚合粒度：day 截取 10 位 (YYYY-MM-DD)，month 截取 7 位 (YYYY-MM)，year 截取 4 位 (YYYY)。
+  // 按月/年聚合在数据库侧完成，行数 = 2 * 桶数（day≤60→120, month≤36→72, year≤10→20），远低于 1000 行上限。
+  const substrLen = trendGranularity === "year" ? 4 : trendGranularity === "month" ? 7 : 10;
+
   // 拆成两次 aggregate：单次 .end() 上限 1000 行。
   // 一次按 (type+category2) 聚合分类排行，体积 ≈ 2 * 分类数（< 100）
-  // 一次按 (type+date) 聚合按日趋势，体积 ≈ 2 * 有账单的日期数（典型 < 800）
-  // 任一都不会触顶；总额在客户端再合并，避免丢数据。
+  // 一次按 (type+date) 聚合趋势，粒度由 trendGranularity 控制。
   const [categoryAgg, dailyAgg] = await Promise.all([
     db.collection("bills").aggregate()
       .match(match)
@@ -1363,13 +1366,15 @@ const getStats = async (event) => {
         _id: { type: "$type", category2: "$category2", category2Icon: "$category2Icon" },
         amount: $.sum("$amount")
       })
+      .limit(1000)
       .end(),
     db.collection("bills").aggregate()
       .match(match)
       .group({
-        _id: { type: "$type", date: $.substr(["$date", 0, 10]) },
+        _id: { type: "$type", date: $.substr(["$date", 0, substrLen]) },
         amount: $.sum("$amount")
       })
+      .limit(1000)
       .end()
   ]);
 

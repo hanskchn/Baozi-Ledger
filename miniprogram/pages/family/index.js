@@ -40,6 +40,10 @@ Page({
     joinCode: "",
     joinFocus: false,
     inviteSheetVisible: false,
+    qrcodePath: "",
+    qrcodeLoading: false,
+    inviteExpired: false,
+    inviteExpireText: "",
     codeCells: ["", "", "", "", "", "", "", ""]
   },
 
@@ -68,7 +72,7 @@ Page({
       wx.setStorageSync("currentFamilyId", currentFamilyId);
       // 账本变了就清掉上一个账本的邀请码，避免展示成新账本的码
       if (this.data.inviteFamilyId && this.data.inviteFamilyId !== currentFamilyId) {
-        this.setData({ inviteCode: "", inviteFamilyId: "" });
+        this.setData({ inviteCode: "", inviteFamilyId: "", qrcodePath: "", inviteExpired: false, inviteExpireText: "" });
       }
       this.setData({ families: result.families, currentFamilyId });
       if (currentFamilyId) {
@@ -81,7 +85,9 @@ Page({
     } finally {
       this.setData({ loading: false });
     }
-    if (this.data.isAdmin && (!this.data.inviteCode || this.data.inviteFamilyId !== this.data.currentFamilyId)) {
+    // 管理员每次进页面都刷新一次邀请码状态（getFamilyInvite 只读，开销小），
+    // 保证过期状态/剩余时间及时更新
+    if (this.data.isAdmin) {
       this.ensureInvite();
     }
   },
@@ -188,11 +194,13 @@ Page({
     if (!this.data.isAdmin) return;
     if (!this.hasFreshInviteCode()) {
       wx.showLoading({ title: "加载邀请码", mask: true });
-      const code = await this.ensureInvite();
+      // 用户主动点「邀请家人」，没有有效码时直接生成一个新码
+      const code = this.data.inviteExpired ? await this.generateInvite() : await this.ensureInvite();
       wx.hideLoading();
       if (!code) return;
     }
     this.setData({ inviteSheetVisible: true });
+    this.loadQrcode();
   },
 
   // 邀请码必须既存在、又属于当前账本，才算可用
@@ -202,6 +210,43 @@ Page({
 
   closeInviteSheet() {
     this.setData({ inviteSheetVisible: false });
+  },
+
+  async loadQrcode() {
+    if (this.data.qrcodePath || this.data.qrcodeLoading) return;
+    this.setData({ qrcodeLoading: true });
+    try {
+      const accountInfo = wx.getAccountInfoSync ? wx.getAccountInfoSync() : null;
+      const runtimeEnv = (accountInfo && accountInfo.miniProgram && accountInfo.miniProgram.envVersion) || "release";
+      // 开发版/体验版统一生成 trial 码，方便体验成员扫码测试；正式版才生成 release 码
+      const envVersion = runtimeEnv === "release" ? "release" : "trial";
+      const result = await this.callFunction("getInviteQrcode", { familyId: this.data.currentFamilyId, envVersion });
+      const download = await wx.cloud.downloadFile({ fileID: result.fileId });
+      this.setData({ qrcodePath: download.tempFilePath, qrcodeLoading: false });
+    } catch (error) {
+      this.setData({ qrcodeLoading: false });
+      wx.showToast({ title: error.message || "二维码生成失败", icon: "none" });
+    }
+  },
+
+  saveQrcode() {
+    if (!this.data.qrcodePath) return;
+    wx.saveImageToPhotosAlbum({
+      filePath: this.data.qrcodePath,
+      success: () => wx.showToast({ title: "已保存到相册" }),
+      fail: (error) => {
+        if (String(error.errMsg || "").includes("auth deny")) {
+          wx.showModal({
+            title: "需要相册权限",
+            content: "请在设置中允许保存图片到相册",
+            confirmText: "去设置",
+            success: (res) => { if (res.confirm) wx.openSetting(); }
+          });
+        } else {
+          wx.showToast({ title: "保存失败", icon: "none" });
+        }
+      }
+    });
   },
 
   openFamilySettings() {
@@ -262,21 +307,81 @@ Page({
     } catch (error) { wx.showToast({ title: error.message || "修改失败", icon: "none" }); }
   },
 
-  // 只读取当前有效邀请码（getFamilyInvite 幂等，不会作废旧码）。
-  // 切勿在此调用 createInvite —— 那会让已经发给家人的邀请码失效。
+  // 把到期时间格式化为「还剩 X 天 / X 小时」或具体到期日期
+  formatInviteExpiry(expiresAt) {
+    if (!expiresAt) return "";
+    const diff = new Date(expiresAt).getTime() - Date.now();
+    if (diff <= 0) return "已过期";
+    const hours = Math.floor(diff / (60 * 60 * 1000));
+    if (hours < 24) return "还剩 " + hours + " 小时";
+    const days = Math.floor(hours / 24);
+    if (days <= 3) return "还剩 " + days + " 天";
+    const date = new Date(expiresAt);
+    return (date.getMonth() + 1) + "月" + date.getDate() + "日到期";
+  },
+
+  // 只读取当前有效邀请码（getFamilyInvite 只读，不会作废旧码）。
+  // 过期/无码时返回 null 并把 inviteExpired 置为 true，由前端引导管理员手动生成。
   async ensureInvite() {
     const familyId = this.data.currentFamilyId;
     if (!familyId || !this.data.isAdmin) return null;
-    if (this.data.inviteCode && this.data.inviteFamilyId === familyId) return this.data.inviteCode;
     try {
       const result = await this.callFunction("getFamilyInvite", { familyId });
       // 请求期间可能又切了账本，结果过期就丢弃，避免展示错账本的邀请码
       if (familyId !== this.data.currentFamilyId) return null;
-      this.setData({ inviteCode: result.code, inviteFamilyId: familyId });
-      return result.code;
+      if (result.code) {
+        this.setData({
+          inviteCode: result.code,
+          inviteFamilyId: familyId,
+          inviteExpired: false,
+          inviteExpireText: this.formatInviteExpiry(result.expiresAt)
+        });
+        // 后台预生成二维码，用户点开邀请面板时已就绪，避免首次等待
+        this.loadQrcode();
+        return result.code;
+      }
+      this.setData({ inviteCode: "", inviteFamilyId: familyId, inviteExpired: true, inviteExpireText: "已过期" });
+      return null;
     } catch (error) {
       wx.showToast({ title: error.message || "获取邀请码失败", icon: "none" });
       return null;
+    }
+  },
+
+  // 显式生成新邀请码（过期卡片按钮 / 主动邀请时调用），会作废旧码
+  async generateInvite() {
+    const familyId = this.data.currentFamilyId;
+    if (!familyId || !this.data.isAdmin) return null;
+    try {
+      const result = await this.callFunction("createInvite", { familyId });
+      if (familyId !== this.data.currentFamilyId) return null;
+      this.setData({
+        inviteCode: result.code,
+        inviteFamilyId: familyId,
+        inviteExpired: false,
+        inviteExpireText: this.formatInviteExpiry(result.expiresAt),
+        qrcodePath: ""
+      });
+      this.loadQrcode();
+      return result.code;
+    } catch (error) {
+      wx.showToast({ title: error.message || "生成失败", icon: "none" });
+      return null;
+    }
+  },
+
+  async onGenerateInvite() {
+    wx.showLoading({ title: "生成中", mask: true });
+    const code = await this.generateInvite();
+    wx.hideLoading();
+    if (code) wx.showToast({ title: "已生成新邀请码" });
+  },
+
+  onInviteExtraTap() {
+    if (this.data.inviteExpired) {
+      this.onGenerateInvite();
+    } else {
+      this.regenerateInvite();
     }
   },
 
@@ -284,17 +389,15 @@ Page({
     this.setData({ settingsVisible: false, inviteSheetVisible: false });
     const modal = await new Promise((resolve) => wx.showModal({ title: "重新生成邀请码", content: "生成新码后，旧邀请码将立刻失效。", success: resolve }));
     if (!modal.confirm) return;
-    try {
-      const familyId = this.data.currentFamilyId;
-      const result = await this.callFunction("createInvite", { familyId });
-      this.setData({ inviteCode: result.code, inviteFamilyId: familyId });
-      wx.showToast({ title: "已生成新邀请码" });
-    } catch (error) { wx.showToast({ title: error.message || "生成失败", icon: "none" }); }
+    wx.showLoading({ title: "生成中", mask: true });
+    const code = await this.generateInvite();
+    wx.hideLoading();
+    if (code) wx.showToast({ title: "已生成新邀请码" });
   },
 
   copyInviteCode() {
     if (!this.hasFreshInviteCode()) {
-      this.ensureInvite();
+      wx.showToast({ title: "邀请码已过期，请先生成", icon: "none" });
       return;
     }
     const code = this.data.inviteCode;
@@ -313,7 +416,7 @@ Page({
     if (!modal.confirm) return;
     try {
       await this.callFunction("revokeInvite", { familyId: this.data.currentFamilyId });
-      this.setData({ inviteCode: "", inviteFamilyId: "" });
+      this.setData({ inviteCode: "", inviteFamilyId: "", qrcodePath: "", inviteExpired: true, inviteExpireText: "已过期" });
       wx.showToast({ title: "邀请码已撤销" });
     } catch (error) { wx.showToast({ title: error.message || "撤销失败", icon: "none" }); }
   },
@@ -479,6 +582,42 @@ Page({
       wx.showToast({ title: "已退出" });
       await this.loadFamilies();
     } catch (error) { wx.showToast({ title: error.message || "退出失败", icon: "none" }); }
+  },
+
+  async dissolveFamily() {
+    this.setData({ settingsVisible: false });
+    const familyName = this.data.currentFamilyName || "该账本";
+    const confirm1 = await new Promise((resolve) => wx.showModal({
+      title: "解散账本",
+      content: "解散后「" + familyName + "」的所有成员将无法访问账本。账本数据将保留 30 天，期间你可以还原。30 天后将永久删除所有账单、分类和预算，且无法恢复。",
+      confirmText: "继续解散",
+      confirmColor: "#D32F2F",
+      success: resolve
+    }));
+    if (!confirm1.confirm) return;
+    const confirm2 = await new Promise((resolve) => wx.showModal({
+      title: "再次确认",
+      content: "请再次确认：解散「" + familyName + "」？此操作将立即通知所有成员失去访问权。",
+      confirmText: "确认解散",
+      confirmColor: "#D32F2F",
+      success: resolve
+    }));
+    if (!confirm2.confirm) return;
+    wx.showLoading({ title: "解散中", mask: true });
+    try {
+      await this.callFunction("dissolveFamily", { familyId: this.data.currentFamilyId });
+      wx.hideLoading();
+      wx.removeStorageSync("currentFamilyId");
+      app.globalData.currentFamilyId = "";
+      app.globalData.currentFamily = null;
+      app.initializePromise = null;
+      app.globalData.billsDirty = true;
+      wx.showToast({ title: "账本已解散", icon: "none" });
+      setTimeout(() => this.loadFamilies(), 500);
+    } catch (error) {
+      wx.hideLoading();
+      wx.showToast({ title: error.message || "解散失败", icon: "none" });
+    }
   },
 
   onShareAppMessage() {

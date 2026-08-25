@@ -376,9 +376,7 @@ Page({
       const response = await wx.cloud.callFunction({ name: "ledgerFunctions", data: { action: "confirmJoinFamily", code } });
       if (!response.result?.success) throw new Error(response.result?.message || "加入失败");
       app.removePendingInvite(code);
-      wx.setStorageSync("currentFamilyId", response.result.family.id);
-      app.globalData.currentFamilyId = response.result.family.id;
-      app.globalData.currentFamily = response.result.family;
+      app.onFamilyChange(response.result.family);
       app.initializePromise = null;
       wx.showToast({ title: response.result.alreadyMember ? "已切换账本" : "加入成功" });
       this.onShow();
@@ -386,7 +384,11 @@ Page({
   },
 
   declinePendingInvite() {
-    wx.showToast({ title: "邀请已保留，可稍后确认", icon: "none" });
+    const code = this.data.pendingInvite?.code;
+    if (code) app.removePendingInvite(code);
+    this.setData({ pendingInvite: null });
+    app.initializePromise = null;
+    this.refreshHome({ silent: true });
   },
 
   async removePendingInvite() {

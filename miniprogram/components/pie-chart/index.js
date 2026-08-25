@@ -36,6 +36,9 @@ Component({
     }
   },
   methods: {
+    redraw() {
+      if (this._ready) this._scheduleDraw(true);
+    },
     onTouch(e) {
       const t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]);
       if (!t) return;
@@ -66,7 +69,7 @@ Component({
         .fields({ node: true, size: true })
         .exec((res) => {
           this._pending = false;
-          if (!res || !res[0] || !res[0].node) return;
+          if (!res || !res[0] || !res[0].node || !res[0].width || !res[0].height) return;
           this._canvas = res[0].node;
           this._canvasW = res[0].width;
           this._canvasH = res[0].height;
@@ -80,6 +83,7 @@ Component({
       const ctx = canvas.getContext('2d');
       const dpr = (wx.getWindowInfo && wx.getWindowInfo().pixelRatio) || (wx.getSystemInfoSync && wx.getSystemInfoSync().pixelRatio) || 1;
       const W = this._canvasW, H = this._canvasH;
+      if (W <= 0 || H <= 0) return;
       const slices = this.data.slices || [];
       const title = this.data.title || '总支出';
       const categoryCount = this.data.categoryCount || 0;

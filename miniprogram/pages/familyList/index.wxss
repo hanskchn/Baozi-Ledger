@@ -138,3 +138,35 @@
   border-radius: 48rpx;
   box-shadow: 0 8rpx 20rpx rgba(255, 107, 53, 0.32);
 }
+
+.recoverable-card {
+  margin-top: 24rpx;
+}
+
+.ledger-item-dissolved {
+  opacity: 0.75;
+}
+
+.ledger-icon-dissolved {
+  background: linear-gradient(135deg, #BCAAA4, #8D6E63);
+}
+
+.badge-dissolved {
+  background: #FBE9E7;
+  color: #BF360C;
+}
+
+.ledger-meta-warn {
+  color: #D84315 !important;
+}
+
+.restore-btn {
+  margin-left: 12rpx;
+  padding: 10rpx 28rpx;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #FF6B35;
+  background: #FFF3E6;
+  border-radius: 28rpx;
+  flex-shrink: 0;
+}

@@ -10,11 +10,19 @@ const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 
 Component({
   properties: {
-    data: { type: Array, value: [] }
+    data: { type: Array, value: [] },
+    smooth: { type: Boolean, value: true }
   },
   observers: {
-    'data'() {
-      if (this._ready) this._scheduleDraw();
+    'data, smooth'() {
+      if (!this._ready) return;
+      // 数据或绘制模式变化时，取消未完成的动画帧，避免旧帧用旧参数重绘
+      if (this._raf) {
+        cancelAnimationFrame(this._raf);
+        this._raf = null;
+      }
+      this._oldData = null;
+      this._scheduleDraw();
     }
   },
   data: {},
@@ -37,6 +45,9 @@ Component({
     }
   },
   methods: {
+    redraw() {
+      if (this._ready) this._scheduleDraw(true);
+    },
     onTouch(e) {
       if (!this._layout || !this.data.data || this.data.data.length === 0) return;
       const t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]);
@@ -70,7 +81,7 @@ Component({
         .fields({ node: true, size: true })
         .exec((res) => {
           this._pending = false;
-          if (!res || !res[0] || !res[0].node) return;
+          if (!res || !res[0] || !res[0].node || !res[0].width || !res[0].height) return;
           this._canvas = res[0].node;
           this._canvasW = res[0].width;
           this._canvasH = res[0].height;
@@ -84,6 +95,7 @@ Component({
       const ctx = canvas.getContext('2d');
       const dpr = (wx.getWindowInfo && wx.getWindowInfo().pixelRatio) || (wx.getSystemInfoSync && wx.getSystemInfoSync().pixelRatio) || 1;
       const W = this._canvasW, H = this._canvasH;
+      if (W <= 0 || H <= 0) return;
       const items = this.data.data || [];
 
       canvas.width = W * dpr;
@@ -200,8 +212,9 @@ Component({
       ctx.beginPath();
       ctx.rect(padL, padT, chartW, chartH);
       ctx.clip();
-      this._drawAreaAndLine(ctx, points, padT + chartH, COLOR_EXPENSE, 'rgba(255,107,53,0.12)');
-      this._drawAreaAndLine(ctx, incomePoints, padT + chartH, COLOR_INCOME, 'rgba(76,175,80,0.10)');
+      const smooth = this.data.smooth !== false;
+      this._drawAreaAndLine(ctx, points, padT + chartH, COLOR_EXPENSE, 'rgba(255,107,53,0.12)', smooth);
+      this._drawAreaAndLine(ctx, incomePoints, padT + chartH, COLOR_INCOME, 'rgba(76,175,80,0.10)', smooth);
       ctx.restore();
 
       // 6. 数据点（≤7 个时显示）
@@ -229,16 +242,19 @@ Component({
         this._raf = null;
       }
     },
-    _drawAreaAndLine(ctx, pts, baselineY, lineColor, areaColor) {
+    _drawAreaAndLine(ctx, pts, baselineY, lineColor, areaColor, smooth) {
       if (pts.length === 0) return;
-      // 面积
-      ctx.beginPath();
-      ctx.moveTo(pts[0].x, baselineY);
-      if (pts.length === 1) {
-        ctx.lineTo(pts[0].x, pts[0].y);
-      } else {
-        // 平滑曲线
-        ctx.lineTo(pts[0].x, pts[0].y);
+      const buildSegment = (ctx, pts) => {
+        if (pts.length === 1) {
+          ctx.lineTo(pts[0].x, pts[0].y);
+          return;
+        }
+        if (!smooth) {
+          for (let i = 1; i < pts.length; i++) {
+            ctx.lineTo(pts[i].x, pts[i].y);
+          }
+          return;
+        }
         for (let i = 0; i < pts.length - 1; i++) {
           const p0 = pts[i - 1] || pts[i];
           const p1 = pts[i];
@@ -250,7 +266,12 @@ Component({
           const cp2y = p2.y - (p3.y - p1.y) / 6;
           ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
         }
-      }
+      };
+      // 面积
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, baselineY);
+      ctx.lineTo(pts[0].x, pts[0].y);
+      buildSegment(ctx, pts);
       ctx.lineTo(pts[pts.length - 1].x, baselineY);
       ctx.closePath();
       ctx.fillStyle = areaColor;
@@ -259,19 +280,7 @@ Component({
       // 折线
       ctx.beginPath();
       ctx.moveTo(pts[0].x, pts[0].y);
-      if (pts.length > 1) {
-        for (let i = 0; i < pts.length - 1; i++) {
-          const p0 = pts[i - 1] || pts[i];
-          const p1 = pts[i];
-          const p2 = pts[i + 1];
-          const p3 = pts[i + 2] || p2;
-          const cp1x = p1.x + (p2.x - p0.x) / 6;
-          const cp1y = p1.y + (p2.y - p0.y) / 6;
-          const cp2x = p2.x - (p3.x - p1.x) / 6;
-          const cp2y = p2.y - (p3.y - p1.y) / 6;
-          ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
-        }
-      }
+      buildSegment(ctx, pts);
       ctx.strokeStyle = lineColor;
       ctx.lineWidth = 2;
       ctx.stroke();
@@ -310,6 +319,7 @@ Component({
     },
     _drawTooltip(ctx, expPt, incPt, item) {
       const W = this._canvasW;
+      const H = this._canvasH;
       const x = expPt.x;
       const padT = this._layout.padT;
       const baselineY = this._layout.padT + this._layout.chartH;
@@ -329,7 +339,9 @@ Component({
       if (Number(item.income) > 0) this._drawHaloDot(ctx, x, incPt.y, COLOR_INCOME);
 
       // 气泡内容
+      const title = item.fullLabel || item.label || "";
       const lines = [];
+      if (title) lines.push({ color: '#FFFFFF', text: title, title: true });
       if (Number(item.expense) > 0) lines.push({ color: COLOR_EXPENSE, text: '支出 ¥' + Number(item.expense).toFixed(2) });
       if (Number(item.income) > 0) lines.push({ color: COLOR_INCOME, text: '收入 ¥' + Number(item.income).toFixed(2) });
       if (lines.length === 0) return;
@@ -356,6 +368,8 @@ Component({
       );
       let by = touchY - bubbleH - gap;
       if (by < padT) by = touchY + gap;
+      // 下方也放不下时 clamp 到可视区内
+      if (by + bubbleH > H - 2) by = Math.max(padT, H - bubbleH - 2);
 
       // 气泡背景
       ctx.fillStyle = 'rgba(93,64,55,0.9)';
@@ -367,12 +381,19 @@ Component({
       ctx.textAlign = 'left';
       lines.forEach((l, i) => {
         const ty = by + bubblePadY + i * lineH + lineH / 2;
-        ctx.fillStyle = l.color;
-        ctx.beginPath();
-        ctx.arc(bx + bubblePadX, ty, 4, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillText(l.text, bx + bubblePadX + 12, ty);
+        if (l.title) {
+          ctx.fillStyle = 'rgba(255,255,255,0.65)';
+          ctx.font = '18rpx sans-serif';
+          ctx.fillText(l.text, bx + bubblePadX, ty);
+          ctx.font = '20rpx sans-serif';
+        } else {
+          ctx.fillStyle = l.color;
+          ctx.beginPath();
+          ctx.arc(bx + bubblePadX, ty, 4, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillText(l.text, bx + bubblePadX + 12, ty);
+        }
       });
     },
     _drawHaloDot(ctx, x, y, color) {

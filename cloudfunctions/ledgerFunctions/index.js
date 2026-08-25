@@ -97,6 +97,7 @@ const command = db.command;
 let collectionsReadyPromise;
 const MAX_FAMILY_MEMBERS = 50;
 const FAMILY_MEMBER_QUERY_LIMIT = 100;
+const DISSOLVE_RETENTION_DAYS = 30;
 const DEFAULT_SEED_VERSION = 1;
 const COLLECTIONS = [
   "users",
@@ -462,7 +463,13 @@ const initUser = async (event) => {
           code: pendingInviteCode,
           familyName: family.name,
           adminName: admin?.nickName || "管理员",
+          adminAvatar: admin?.avatarUrl || "",
+          memberPreviews: members
+            .filter((m) => m.openid !== user.openid)
+            .slice(0, 3)
+            .map((m) => ({ nickName: m.nickName || "微信用户", avatarUrl: m.avatarUrl || "" })),
           memberCount: members.length,
+          totalBillCount: await countFamilyBills(invite.familyId),
           alreadyMember: Boolean(existing)
         }
       };
@@ -534,7 +541,23 @@ const listFamilies = async () => {
       createdAt: family.createdAt
     };
   }));
-  return { success: true, families };
+  // 可还原账本：已解散但在 30 天保留期内，仅原管理员可见
+  const now = new Date();
+  const dissolvedResult = await db.collection("families")
+    .where({ adminOpenid: openid, status: "dissolved" })
+    .orderBy("dissolvedAt", "desc")
+    .limit(20)
+    .get();
+  const recoverableFamilies = dissolvedResult.data
+    .filter((f) => !f.deleteAfter || new Date(f.deleteAfter) > now)
+    .map((f) => ({
+      id: f._id,
+      name: f.name,
+      deleteAfter: f.deleteAfter,
+      dissolvedAt: f.dissolvedAt,
+      daysRemaining: f.deleteAfter ? Math.max(0, Math.ceil((new Date(f.deleteAfter) - now) / 86400000)) : DISSOLVE_RETENTION_DAYS
+    }));
+  return { success: true, families, recoverableFamilies };
 };
 
 const createFamily = async (event) => {
@@ -659,7 +682,7 @@ const getFamilyDetail = async (event) => {
 };
 
 // 幂等读取当前账本的有效邀请码：有则复用，仅在缺失或已过期时才新建。
-// 注意：createInvite 会作废旧码，页面「确保有码」的场景必须走这里，否则每次进页面都会让已发出的邀请码失效。
+// 只读当前有效邀请码，不自动创建新码。过期/撤销后由管理员在前端手动生成。
 const getFamilyInvite = async (event) => {
   await requireAdmin(event.familyId);
   const now = Date.now();
@@ -670,8 +693,11 @@ const getFamilyInvite = async (event) => {
   const valid = existing.data
     .filter((invite) => new Date(invite.expiresAt).getTime() > now)
     .sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime())[0];
-  if (valid) return { success: true, code: valid.code, expiresAt: valid.expiresAt, reused: true };
-  return await createInvite(event);
+  if (valid) return { success: true, code: valid.code, expiresAt: valid.expiresAt, hasValid: true };
+  // 找到最近一条 active 但已过期的记录，用于前端展示过期状态
+  const latest = existing.data
+    .sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime())[0];
+  return { success: true, code: "", expiresAt: latest ? latest.expiresAt : null, hasValid: false };
 };
 
 // 轻量版本探测：只读账本文档与自己的成员记录，供客户端判断角色/成员关系是否变化。
@@ -710,6 +736,38 @@ const revokeInvite = async (event) => {
   if (!result.stats?.updated) throw new Error("当前没有可撤销的邀请码");
   await writeOperationLog(event.familyId, "invite.revoke", event.familyId, {});
   return { success: true };
+};
+
+const getInviteQrcode = async (event) => {
+  await requireAdmin(event.familyId);
+  const envVersion = ["develop", "trial", "release"].includes(event.envVersion) ? event.envVersion : "release";
+  const now = Date.now();
+  const existing = await db.collection("family_invites")
+    .where({ familyId: event.familyId, status: "active" })
+    .limit(FAMILY_MEMBER_QUERY_LIMIT)
+    .get();
+  const valid = existing.data
+    .filter((invite) => new Date(invite.expiresAt).getTime() > now)
+    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())[0];
+  if (!valid) throw new Error("没有有效的邀请码，请先生成");
+
+  const code = valid.code;
+  const fileIdField = "qrcodeFileId_" + envVersion;
+  if (valid[fileIdField]) return { success: true, fileId: valid[fileIdField], code };
+
+  const qrResult = await cloud.openapi.wxacode.getUnlimited({
+    scene: "i=" + code,
+    page: "pages/index/index",
+    checkPath: false,
+    width: 430,
+    envVersion
+  });
+  const upload = await cloud.uploadFile({
+    cloudPath: "qrcodes/invite-" + code + "-" + envVersion + ".png",
+    fileContent: qrResult.buffer
+  });
+  await db.collection("family_invites").doc(valid._id).update({ data: { [fileIdField]: upload.fileID } });
+  return { success: true, fileId: upload.fileID, code };
 };
 
 const getValidInvite = async (code) => {
@@ -783,9 +841,6 @@ const confirmJoinFamily = async (event) => {
       const rightStable = right._id === getStableMembershipId(family._id, user.openid);
       return Number(rightStable) - Number(leftStable);
     })[0];
-    if (previous?.leftAt && new Date(inviteInTransaction.createdAt).getTime() <= new Date(previous.leftAt).getTime()) {
-      throw new Error("你已离开该账本，请让管理员生成新的邀请码后再加入");
-    }
     const activeOpenids = new Set(activeResult.data.map((item) => item.openid));
     if (activeOpenids.size >= MAX_FAMILY_MEMBERS) throw new Error("该账本成员已达上限");
 
@@ -904,25 +959,94 @@ const getAccountCancellationStatus = async () => {
 const dissolveFamily = async (event) => {
   const openid = getOpenid();
   const now = new Date();
+  const deleteAfter = new Date(now.getTime() + DISSOLVE_RETENTION_DAYS * 24 * 60 * 60 * 1000);
   const result = await db.runTransaction(async (transaction) => {
     const familyResult = await transaction.collection("families").doc(event.familyId).get();
     const family = familyResult.data;
     if (!family) throw new Error("账本不存在");
-    const members = await transaction.collection("family_members").where({ familyId: event.familyId }).limit(FAMILY_MEMBER_QUERY_LIMIT).get();
+    const members = await transaction.collection("family_members").where({ familyId: event.familyId, status: "active" }).limit(FAMILY_MEMBER_QUERY_LIMIT).get();
     const ownAdmin = members.data.find((item) => item.openid === openid && item.role === "admin");
     if (!ownAdmin && family.status !== "dissolved") throw new Error("只有管理员可以解散账本");
     if (family.status === "dissolved") return { alreadyDissolved: true };
-    const activeMembers = members.data.filter((item) => item.status === "active");
-    if (activeMembers.some((item) => item.openid !== openid) || !ownAdmin || ownAdmin.status !== "active") throw new Error("账本仍有其他成员，请先转让管理员");
     const activeInvites = await transaction.collection("family_invites").where({ familyId: event.familyId, status: "active" }).limit(FAMILY_MEMBER_QUERY_LIMIT).get();
     await Promise.all(activeInvites.data.map((invite) => transaction.collection("family_invites").doc(invite._id).update({ data: { status: "revoked", revokedAt: now } })));
-    await Promise.all(activeMembers.map((member) => transaction.collection("family_members").doc(member._id).update({ data: { status: "dissolved", leftAt: now, updatedAt: now } })));
-    await transaction.collection("families").doc(event.familyId).update({ data: { status: "dissolved", dissolvedAt: now, activeMemberCount: 0, membershipRevision: Number(family.membershipRevision || 0) + 1, updatedAt: now } });
+    await Promise.all(members.data.map((member) => transaction.collection("family_members").doc(member._id).update({ data: { status: "dissolved", dissolvedAt: now, updatedAt: now } })));
+    await transaction.collection("families").doc(event.familyId).update({ data: { status: "dissolved", dissolvedAt: now, deleteAfter, dissolvedBy: openid, activeMemberCount: 0, membershipRevision: Number(family.membershipRevision || 0) + 1, updatedAt: now } });
     const existingLog = await transaction.collection("operation_logs").where({ familyId: event.familyId, action: "family.dissolve", targetId: event.familyId }).limit(1).get();
-    if (!existingLog.data.length) await addOperationLogInTransaction(transaction, event.familyId, "family.dissolve", event.familyId, { reason: "account_cancellation" });
+    if (!existingLog.data.length) await addOperationLogInTransaction(transaction, event.familyId, "family.dissolve", event.familyId, { deleteAfter, memberCount: members.data.length });
     return { alreadyDissolved: false };
   });
   return { success: true, alreadyDissolved: result.alreadyDissolved };
+};
+
+const restoreFamily = async (event) => {
+  const openid = getOpenid();
+  const now = new Date();
+  const family = await getFamilyOrNull(event.familyId);
+  if (!family) throw new Error("账本不存在");
+  if (family.status !== "dissolved") throw new Error("账本未处于解散状态");
+  if (family.adminOpenid !== openid) throw new Error("只有原管理员可以还原账本");
+  if (family.deleteAfter && new Date(family.deleteAfter) < now) throw new Error("账本已过保留期，无法还原");
+
+  await db.runTransaction(async (transaction) => {
+    const memberResult = await transaction.collection("family_members")
+      .where({ familyId: event.familyId, openid, role: "admin" })
+      .limit(FAMILY_MEMBER_QUERY_LIMIT).get();
+    const adminMember = memberResult.data.sort((a, b) => new Date(b.joinedAt || 0) - new Date(a.joinedAt || 0))[0];
+    if (!adminMember) throw new Error("管理员关系丢失，无法还原");
+    await transaction.collection("family_members").doc(adminMember._id).update({
+      data: { status: "active", dissolvedAt: db.command.remove(), updatedAt: now }
+    });
+    await transaction.collection("families").doc(event.familyId).update({
+      data: {
+        status: "active",
+        dissolvedAt: db.command.remove(),
+        deleteAfter: db.command.remove(),
+        dissolvedBy: db.command.remove(),
+        activeMemberCount: 1,
+        membershipRevision: Number(family.membershipRevision || 0) + 1,
+        updatedAt: now
+      }
+    });
+    await addOperationLogInTransaction(transaction, event.familyId, "family.restore", event.familyId, {});
+  });
+  // 还原后旧邀请码已全部撤销，需要重新生成
+  await db.collection("families").doc(event.familyId).update({ data: { initialInviteInitialized: false, updatedAt: now } });
+  await ensureInitialFamilyInvite(event.familyId, openid);
+  return { success: true };
+};
+
+const purgeExpiredFamilies = async () => {
+  const now = new Date();
+  const expiredResult = await db.collection("families")
+    .where({ status: "dissolved", deleteAfter: db.command.lt(now) })
+    .limit(100)
+    .get();
+  const purged = [];
+  for (const family of expiredResult.data) {
+    const familyId = family._id;
+    try {
+      await db.runTransaction(async (transaction) => {
+        const fresh = await transaction.collection("families").doc(familyId).get();
+        if (!fresh.data || fresh.data.status !== "dissolved" || !fresh.data.deleteAfter || new Date(fresh.data.deleteAfter) >= now) return;
+        const familyScopedCollections = ["bills", "categories", "accounts", "budgets", "family_invites", "family_members", "operation_logs"];
+        for (const colName of familyScopedCollections) {
+          let deleted = 0;
+          do {
+            const batch = await transaction.collection(colName).where({ familyId }).limit(100).get();
+            if (!batch.data.length) break;
+            await Promise.all(batch.data.map((doc) => transaction.collection(colName).doc(doc._id).remove()));
+            deleted = batch.data.length;
+          } while (deleted >= 100);
+        }
+        await transaction.collection("families").doc(familyId).remove();
+      });
+      purged.push(familyId);
+    } catch (error) {
+      console.warn("purgeExpiredFamilies: failed to purge", familyId, error);
+    }
+  }
+  return { success: true, purgedCount: purged.length };
 };
 
 const cancelAccount = async () => {
@@ -959,6 +1083,7 @@ const main = async (event) => {
     case "getFamilyInvite": return await getFamilyInvite(event);
     case "getFamilyRevision": return await getFamilyRevision(event);
     case "revokeInvite": return await revokeInvite(event);
+    case "getInviteQrcode": return await getInviteQrcode(event);
     case "verifyInvite": return await verifyInvite(event);
     case "confirmJoinFamily": return await confirmJoinFamily(event);
     case "joinFamily": return await confirmJoinFamily(event);
@@ -967,6 +1092,8 @@ const main = async (event) => {
     case "transferAdmin": return await transferAdmin(event);
     case "getAccountCancellationStatus": return await getAccountCancellationStatus();
     case "dissolveFamily": return await dissolveFamily(event);
+    case "restoreFamily": return await restoreFamily(event);
+    case "purgeExpiredFamilies": return await purgeExpiredFamilies();
     case "cancelAccount": return await cancelAccount();
     default: return fail("未知操作", "UNKNOWN_ACTION");
   }
@@ -974,6 +1101,16 @@ const main = async (event) => {
 
 exports.main = async (event) => {
   try {
+    if (event && event.TriggerName && !event.action && !event.type) {
+      let action = "purgeExpiredFamilies";
+      try {
+        if (event.Message) {
+          const msg = typeof event.Message === "string" ? JSON.parse(event.Message) : event.Message;
+          if (msg && msg.action) action = msg.action;
+        }
+      } catch (e) { /* ignore parse error, use default */ }
+      if (action === "purgeExpiredFamilies") return await purgeExpiredFamilies();
+    }
     return await main(event);
   } catch (error) {
     console.error(error);
