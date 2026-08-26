@@ -70,8 +70,6 @@ Page({
   },
 
   async onShow() {
-    // 未登录时不加载账单数据，统一跳登录页
-    if (app.globalData.loggedIn !== true) { app.redirectToLogin(); return; }
     try {
       await app.ensureInitialized();
       const familyId = app.globalData.currentFamilyId;

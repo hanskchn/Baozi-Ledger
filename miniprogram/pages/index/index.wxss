@@ -570,12 +570,16 @@
 .manage-family { justify-content: center; color: #FF8C42; border-bottom: 0; }
 
 .welcome-mask { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(93, 64, 55, 0.5); z-index: 300; display: flex; align-items: center; justify-content: center; padding: 0 48rpx; }
-.welcome-card { width: 100%; background: #FFF8EC; border-radius: 24rpx; padding: 48rpx 40rpx 40rpx; display: flex; flex-direction: column; align-items: center; box-shadow: 0 12rpx 40rpx rgba(93, 64, 55, 0.18); }
-.welcome-illustration { width: 240rpx; height: 180rpx; }
-.welcome-mark { width: 140rpx; height: 120rpx; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: #FFF1D6; border: 2rpx solid #F6B84C; color: #8D5A2B; font-size: 56rpx; font-weight: 600; }
-.welcome-title { margin-top: 32rpx; color: #5D4037; font-size: 38rpx; font-weight: 600; }
-.welcome-desc { margin-top: 18rpx; color: #8D6E63; font-size: 26rpx; line-height: 1.7; text-align: center; }
-.welcome-btn { margin-top: 44rpx; width: 100%; background: #FF8C42; color: #FFFFFF; border-radius: 12rpx; font-size: 30rpx; }
+.welcome-card { width: 100%; background: #FFFFFF; border-radius: 32rpx; padding: 56rpx 48rpx 48rpx; display: flex; flex-direction: column; align-items: center; box-shadow: 0 12rpx 40rpx rgba(93, 64, 55, 0.18); }
+.welcome-logo { width: 200rpx; height: 200rpx; }
+.welcome-logo-text { font-size: 52rpx; font-weight: 600; color: var(--primary-deep, #FF6B35); }
+.welcome-slogan { margin-top: 40rpx; font-size: 36rpx; font-weight: 600; line-height: 52rpx; letter-spacing: 2rpx; color: var(--text-primary, #3E2723); text-align: center; }
+.welcome-subtitle { margin-top: 16rpx; max-width: 520rpx; font-size: 26rpx; line-height: 42rpx; color: var(--text-secondary, #8D6E63); text-align: center; }
+.welcome-tagline { margin-top: 12rpx; font-size: 24rpx; line-height: 34rpx; letter-spacing: 1rpx; color: var(--text-tertiary, #BCAAA4); text-align: center; }
+.welcome-divider { width: 60rpx; height: 4rpx; margin: 36rpx 0 8rpx; border-radius: 2rpx; background: #FFE0B2; }
+.welcome-desc { color: #8D6E63; font-size: 26rpx; line-height: 1.7; text-align: center; }
+.welcome-btn { margin-top: 40rpx; width: 100%; display: flex; align-items: center; justify-content: center; height: 88rpx; line-height: 1; background: #FF8C42; color: #FFFFFF; border-radius: 44rpx; font-size: 30rpx; font-weight: 600; }
+.welcome-btn::after { border: none; }
 
 /* —— 首页最近账单：左滑删除 —— */
 .bill-swipe-wrap {

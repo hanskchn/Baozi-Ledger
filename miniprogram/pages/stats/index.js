@@ -34,8 +34,6 @@ Page({
     return `stats:${familyId}:${filterKey}`;
   },
   onShow() {
-    // 未登录时不加载统计数据，统一跳登录页
-    if (app.globalData.loggedIn !== true) { app.redirectToLogin(); return; }
     const dirty = app.globalData.billsDirty === true;
     if (dirty) app.globalData.billsDirty = false;
     this.loadOptions().then(() => this.loadStats({ forceRefresh: dirty }));

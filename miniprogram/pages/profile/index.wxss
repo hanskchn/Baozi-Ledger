@@ -11,30 +11,17 @@
   margin-bottom: 16rpx;
 }
 
+.user-avatar-wrap {
+  width: 140rpx;
+  height: 140rpx;
+  margin-bottom: 20rpx;
+}
+
 .user-avatar {
   width: 140rpx;
   height: 140rpx;
   border-radius: 50%;
   background: #f0f0f0;
-}
-
-.user-avatar-button {
-  width: 140rpx;
-  height: 140rpx;
-  margin: 0 0 20rpx 0;
-  padding: 0;
-  border-radius: 50%;
-  overflow: hidden;
-  background: transparent;
-  line-height: 0;
-}
-
-.user-avatar-button::after {
-  border: 0;
-}
-
-.user-avatar-button .user-avatar {
-  margin-right: 0;
 }
 
 .user-info {
@@ -122,4 +109,104 @@
 .user-family-role.member {
   background: #E8F5E9;
   color: #4CAF50;
+}
+
+/* 编辑资料底部弹层 */
+.profile-mask {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(93, 64, 55, 0.5);
+  z-index: 300;
+}
+.profile-sheet {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 301;
+  padding: 16rpx 40rpx calc(48rpx + env(safe-area-inset-bottom));
+  background: #FFFFFF;
+  border-radius: 32rpx 32rpx 0 0;
+  box-shadow: 0 -8rpx 40rpx rgba(93, 64, 55, 0.15);
+}
+.profile-sheet-handle {
+  width: 64rpx;
+  height: 8rpx;
+  margin: 0 auto 24rpx;
+  border-radius: 4rpx;
+  background: #E0E0E0;
+}
+.profile-sheet-title {
+  display: block;
+  text-align: center;
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #5D4037;
+  margin-bottom: 32rpx;
+}
+.profile-avatar-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 32rpx;
+}
+.profile-avatar-btn {
+  position: relative;
+  width: 160rpx;
+  height: 160rpx;
+  padding: 0;
+  margin: 0;
+  border-radius: 50%;
+  overflow: visible;
+  background: transparent;
+  line-height: 0;
+}
+.profile-avatar-btn::after {
+  border: none;
+}
+.profile-avatar-img {
+  width: 160rpx;
+  height: 160rpx;
+  border-radius: 50%;
+  background: #f0f0f0;
+}
+.profile-avatar-tip {
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  color: #BCAAA4;
+}
+.profile-field {
+  display: flex;
+  align-items: center;
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid #F5EBE0;
+}
+.profile-field-label {
+  font-size: 28rpx;
+  color: #5D4037;
+  width: 80rpx;
+  flex-shrink: 0;
+}
+.profile-field-input {
+  flex: 1;
+  margin-left: 24rpx;
+  font-size: 28rpx;
+  color: #5D4037;
+}
+.profile-field-placeholder {
+  color: #BCAAA4;
+}
+.profile-save-btn {
+  margin-top: 48rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 88rpx;
+  line-height: 1;
+  border-radius: 44rpx;
+  background: #FF8C42;
+  color: #FFFFFF;
+  font-size: 30rpx;
+  font-weight: 600;
+}
+.profile-save-btn::after {
+  border: none;
 }

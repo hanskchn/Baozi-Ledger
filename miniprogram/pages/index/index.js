@@ -57,11 +57,6 @@ Page({
   },
 
   onShow() {
-    // 门禁：本地缓存显示未登录时先跳登录页，避免闪现空账本首页
-    if (app.globalData.loggedIn !== true) {
-      app.redirectToLogin();
-      return;
-    }
     // 刚记完账/编辑/删除过账单：跳过首页摘要缓存，避免短暂闪旧数据
     const homeDirty = app.globalData.homeSummaryDirty === true;
     if (homeDirty) app.globalData.homeSummaryDirty = false;
@@ -75,8 +70,13 @@ Page({
     // 1) 先用 storage 缓存立刻渲染骨架内容（hasCache 标记避免覆盖式 setData）
     const hasCache = this.applyCachedHome({ skipIfDirty: homeDirty });
     this.refreshNicknameTip();
-    // 2) 后台刷新：silent=true 时不重复展示 loading，错误也仅在无缓存时落到 errorMessage
-    this.refreshHome({ silent: hasCache });
+    // 2) 新用户（无缓存且未看过欢迎页）立即弹欢迎页，不等云函数初始化
+    const isNewVisitor = !hasCache && !wx.getStorageSync("hasSeenWelcome") && !wx.getStorageSync("welcomePending");
+    if (isNewVisitor) {
+      this.setData({ showWelcome: true });
+    }
+    // 3) 后台刷新：欢迎页展示中或有缓存时不显示 loading
+    this.refreshHome({ silent: hasCache || isNewVisitor });
   },
 
   // 昵称仍是默认值且用户未关闭过提示时，展示"完善昵称"提示条
@@ -171,22 +171,22 @@ Page({
     if (!silent) this.setData({ loading: true, errorMessage: "" });
     try {
       const initialized = await app.ensureInitialized();
-      if (initialized && initialized.loggedIn === false) {
-        app.redirectToLogin();
-        return;
-      }
       if (app.globalData.initializationNotice) {
         wx.showToast({ title: app.globalData.initializationNotice, icon: "none" });
         app.globalData.initializationNotice = "";
       }
+      // 初始化拿到最新用户资料后再判定一次，避免缓存里没有昵称时误判
+      this.refreshNicknameTip();
+      if (app.globalData.currentFamily && app.globalData.currentFamily.created) {
+        wx.setStorageSync("welcomePending", true);
+      }
+      // 邀请链接进入：关掉欢迎页，显示邀请确认弹层
       if (initialized.pendingInvite) {
-        this.setData({ pendingInvite: initialized.pendingInvite });
+        this.setData({ showWelcome: false, pendingInvite: initialized.pendingInvite });
         return;
       }
       this.setData({ pendingInvite: null });
-      // 初始化拿到最新用户资料后再判定一次，避免缓存里没有昵称时误判
-      this.refreshNicknameTip();
-      if (app.globalData.currentFamily && app.globalData.currentFamily.created && !wx.getStorageSync("hasSeenWelcome")) {
+      if (wx.getStorageSync("welcomePending") && !wx.getStorageSync("hasSeenWelcome") && !this.data.showWelcome) {
         this.setData({ showWelcome: true });
       }
       await Promise.all([this.loadFamilyInfo(), this.loadHomeData()]);
@@ -461,8 +461,28 @@ Page({
 
   onNetworkImageError() { this.setData({ networkImageFailed: true }); },
 
-  closeWelcome() {
+  async closeWelcome() {
     wx.setStorageSync("hasSeenWelcome", true);
+    wx.removeStorageSync("welcomePending");
+    // 云函数初始化可能还在跑（新建账本+种子数据），等它完成
+    if (app.initializePromise || !app.globalData.currentFamily) {
+      wx.showLoading({ title: "准备中", mask: true });
+      try {
+        if (!app.initializePromise) app.initializePromise = app.initialize();
+        const result = await app.initializePromise;
+        wx.hideLoading();
+        if (result && result.pendingInvite) {
+          this.setData({ showWelcome: false, pendingInvite: result.pendingInvite });
+          return;
+        }
+      } catch (error) {
+        wx.hideLoading();
+        // 初始化失败：重置 promise，用户可再次点击重试
+        app.initializePromise = null;
+        wx.showToast({ title: error.message || "初始化失败，请重试", icon: "none" });
+        return;
+      }
+    }
     this.setData({ showWelcome: false });
   },
 

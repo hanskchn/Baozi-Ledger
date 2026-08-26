@@ -8,22 +8,18 @@ Page({
     isAdmin: false,
     isOwner: false,
     familyAdminName: "",
-    // 角色未确认前不渲染标签，避免管理员先闪现“成员”
-    roleReady: false
+    roleReady: false,
+    showProfileSheet: false,
+    savingProfile: false,
+    sheetAvatarUrl: ""
   },
 
   async onShow() {
-    // 未登录时不展示个人资料，统一跳登录页
-    if (app.globalData.loggedIn !== true) { app.redirectToLogin(); return; }
     try {
       const initialized = await app.ensureInitialized();
-      if (initialized && initialized.loggedIn === false) { app.redirectToLogin(); return; }
-      // 轻量校验角色是否被服务端改动（如管理员被移交给自己），变化时会广播 onFamilyChanged
       await app.refreshCurrentFamily();
       const user = app.globalData.userInfo || initialized.user;
       const family = app.globalData.currentFamily || initialized.family;
-      // 本项目每个账本仅一位管理员，role 为 admin 即账本归属者；
-      // 旧缓存可能缺少 isOwner，用 role 兜底避免误显示“成员”
       const isAdmin = family?.role === "admin";
       this.setData({
         nickName: user.nickName || "微信用户",
@@ -39,7 +35,6 @@ Page({
     }
   },
 
-  // 账本或角色发生变化时重渲染（由 app.onFamilyChange 广播触发）
   onFamilyChanged(family) {
     if (!family) {
       this.setData({ familyName: "待确认邀请", isAdmin: false, isOwner: false, familyAdminName: "", roleReady: false });
@@ -59,37 +54,73 @@ Page({
     wx.navigateTo({ url: "/pages/family/index" });
   },
 
-  async editProfile() {
-    const modal = await new Promise((resolve) => wx.showModal({ title: "修改昵称", editable: true, content: this.data.nickName, success: resolve }));
-    const nickName = (modal.content || "").trim();
-    if (!modal.confirm || !nickName) return;
-    try {
-      const response = await wx.cloud.callFunction({ name: "ledgerFunctions", data: { action: "updateUserProfile", nickName, avatarUrl: this.data.avatarUrl } });
-      if (!response.result?.success) throw new Error(response.result?.message || "修改失败");
-      app.setLoginState(true, response.result.user);
-      this.setData({ nickName: response.result.user.nickName });
-      wx.showToast({ title: "已修改" });
-    } catch (error) { wx.showToast({ title: error.message || "修改失败", icon: "none" }); }
-  },
-
   noop() {},
 
-  async onChooseAvatar(event) {
-    const tempFilePath = event.detail?.avatarUrl;
+  openProfileSheet() {
+    this._sheetNickname = this.data.nickName === "微信用户" ? "" : this.data.nickName;
+    this._sheetAvatarTempPath = "";
+    this.setData({ showProfileSheet: true, sheetAvatarUrl: this.data.avatarUrl, savingProfile: false });
+  },
+
+  closeProfileSheet() {
+    if (this.data.savingProfile) return;
+    this._sheetNickname = "";
+    this._sheetAvatarTempPath = "";
+    this.setData({ showProfileSheet: false });
+  },
+
+  onSheetChooseAvatar(event) {
+    const tempFilePath = event.detail?.avatarUrl || "";
     if (!tempFilePath) return;
-    try {
-      wx.showLoading({ title: "上传头像", mask: true });
-      const extension = tempFilePath.split(".").pop() || "png";
-      const upload = await wx.cloud.uploadFile({ cloudPath: "avatars/" + Date.now() + "." + extension, filePath: tempFilePath });
-      const response = await wx.cloud.callFunction({ name: "ledgerFunctions", data: { action: "updateUserProfile", nickName: this.data.nickName, avatarUrl: upload.fileID } });
-      if (!response.result?.success) throw new Error(response.result?.message || "头像更新失败");
-      app.globalData.userInfo = response.result.user;
-      this.setData({ avatarUrl: response.result.user.avatarUrl });
-      wx.showToast({ title: "头像已更新" });
-    } catch (error) {
-      wx.showToast({ title: error.message || "头像更新失败", icon: "none" });
-    } finally {
+    this._sheetAvatarTempPath = tempFilePath;
+    this.setData({ sheetAvatarUrl: tempFilePath });
+  },
+
+  onSheetNicknameInput(event) {
+    const value = (event.detail?.value || event.detail?.nickname || "").trim();
+    if (value) this._sheetNickname = value;
+  },
+
+  async saveProfile() {
+    if (this.data.savingProfile) return;
+    const nickName = (this._sheetNickname || "").trim();
+    if (!nickName) {
+      wx.showToast({ title: "请输入昵称", icon: "none" });
+      return;
+    }
+    this.setData({ savingProfile: true });
+    wx.showLoading({ title: "保存中", mask: true });
+    let loadingVisible = true;
+    const closeLoading = () => {
+      if (!loadingVisible) return;
+      loadingVisible = false;
       wx.hideLoading();
+    };
+    try {
+      let avatarUrl = this.data.avatarUrl;
+      if (this._sheetAvatarTempPath) {
+        const extension = this._sheetAvatarTempPath.split(".").pop() || "png";
+        const upload = await wx.cloud.uploadFile({ cloudPath: "avatars/" + Date.now() + "." + extension, filePath: this._sheetAvatarTempPath });
+        avatarUrl = upload.fileID;
+      }
+      const response = await wx.cloud.callFunction({ name: "ledgerFunctions", data: { action: "updateUserProfile", nickName, avatarUrl } });
+      if (!response.result?.success) throw new Error(response.result?.message || "保存失败");
+      app.setLoginState(true, response.result.user);
+      this.setData({
+        nickName: response.result.user.nickName,
+        avatarUrl: response.result.user.avatarUrl,
+        showProfileSheet: false
+      });
+      closeLoading();
+      wx.showToast({ title: "已保存", icon: "success" });
+    } catch (error) {
+      closeLoading();
+      wx.showToast({ title: error.message || "保存失败", icon: "none" });
+    } finally {
+      closeLoading();
+      this._sheetNickname = "";
+      this._sheetAvatarTempPath = "";
+      this.setData({ savingProfile: false });
     }
   },
 
@@ -146,7 +177,7 @@ Page({
       await this.callLedger("cancelAccount");
       app.clearSession();
       wx.removeStorageSync("pendingInviteCodes");
-      wx.showModal({ title: "账号已注销", content: "你的个人资料和账本访问权限已移除。再次登录将视为新用户。", showCancel: false, success: () => wx.reLaunch({ url: "/pages/login/index" }) });
+      wx.showModal({ title: "账号已注销", content: "你的个人资料和账本访问权限已移除。", showCancel: false, success: () => wx.switchTab({ url: "/pages/index/index" }) });
     } catch (error) {
       wx.showToast({ title: error.message || "注销失败", icon: "none" });
     }

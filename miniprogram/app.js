@@ -58,44 +58,6 @@ App({
     }
   },
 
-  // 查询服务端登录态（供登录页使用），不触发任何业务初始化
-  async fetchLoginState() {
-    const response = await wx.cloud.callFunction({ name: "ledgerFunctions", data: { action: "getLoginState" } });
-    const result = response.result;
-    if (!result || !result.success) throw new Error(result?.message || "登录状态检查失败");
-    this.setLoginState(result.loggedIn === true, result.user);
-    return result;
-  },
-
-  // 显式登录：成功后再触发账本初始化
-  async login(profile) {
-    const response = await wx.cloud.callFunction({
-      name: "ledgerFunctions",
-      data: { action: "login", nickName: profile?.nickName || "", avatarUrl: profile?.avatarUrl || "" }
-    });
-    const result = response.result;
-    if (!result || !result.success) throw new Error(result?.message || "登录失败");
-    this.setLoginState(true, result.user);
-    this.initializePromise = null;
-    await this.ensureInitialized();
-    return result;
-  },
-
-  // 未登录时统一跳登录页，页面调用后应立即 return
-  redirectToLogin() {
-    const pages = getCurrentPages();
-    const current = pages[pages.length - 1];
-    if (current && current.route === "pages/login/index") return true;
-    // reLaunch 是异步的，加锁避免多个页面/回调并发跳转把登录页打断成白屏
-    if (this.redirectingToLogin) return true;
-    this.redirectingToLogin = true;
-    wx.reLaunch({
-      url: "/pages/login/index",
-      complete: () => { this.redirectingToLogin = false; }
-    });
-    return true;
-  },
-
   // 登出/注销后清空全部登录与账本状态
   clearSession() {
     this.initializePromise = null;
@@ -149,14 +111,6 @@ App({
       });
       const result = response.result;
       if (!result || !result.success) throw new Error(result?.message || "初始化失败");
-      if (result.loggedIn === false) {
-        // 服务端确认未登录：不落任何业务数据，交由页面跳登录页
-        this.setLoginState(false, result.user);
-        this.globalData.currentFamilyId = "";
-        this.globalData.currentFamily = null;
-        try { wx.removeStorageSync("currentFamilyId"); wx.removeStorageSync("currentFamilyCache"); } catch (error) { /* ignore */ }
-        return result;
-      }
       this.setLoginState(true, result.user);
       if (result.invalidInvite && inviteCode) {
         this.removePendingInvite(inviteCode);
@@ -193,16 +147,6 @@ App({
   ensureInitialized() {
     if (!this.initializePromise) this.initializePromise = this.initialize();
     return this.initializePromise;
-  },
-
-  // 页面门禁：确保已登录并完成初始化；未登录时跳登录页并返回 false
-  async requireLogin() {
-    const result = await this.ensureInitialized();
-    if (result && result.loggedIn === false) {
-      this.redirectToLogin();
-      return false;
-    }
-    return true;
   },
 
   // 切账本统一入口：更新 globalData + 写缓存 + 清缓存 + 广播各页面

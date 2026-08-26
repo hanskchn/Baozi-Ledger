@@ -135,9 +135,12 @@
   </view>
   <view class="welcome-mask" wx:if="{{showWelcome}}" catchtouchmove="noop">
     <view class="welcome-card">
-      <image wx:if="{{hasBrandAssets && !welcomeImageFailed}}" class="welcome-illustration" src="/images/brand/welcome-guide.png" mode="aspectFit" binderror="onWelcomeImageError"></image>
-      <view wx:else class="welcome-mark">包</view>
-      <text class="welcome-title">欢迎来到包子账本</text>
+      <image wx:if="{{hasBrandAssets && !welcomeImageFailed}}" class="welcome-logo" src="/images/brand/bun-logo-orange.png" mode="aspectFit" binderror="onWelcomeImageError"></image>
+      <view wx:else class="welcome-logo-text">包子账本</view>
+      <text class="welcome-slogan">钱要算清楚，日子慢慢过。</text>
+      <text class="welcome-subtitle">包子账本，和家人一起记下每一笔生活开销。</text>
+      <text class="welcome-tagline">简单好用，打开就记。</text>
+      <view class="welcome-divider"></view>
       <text class="welcome-desc">已为你创建「我的家庭账本」，可以开始记下第一笔支出了。支持邀请家人一起记账、查看统计与预算。</text>
       <button class="welcome-btn" bindtap="closeWelcome">开始记账</button>
     </view>

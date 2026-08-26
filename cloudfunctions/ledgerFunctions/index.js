@@ -439,12 +439,8 @@ const ensureInitialFamilyInvite = async (familyId, creatorOpenid) => {
 };
 
 const initUser = async (event) => {
-  // 未登录时不写入任何业务数据：不创建账本、不创建成员关系
-  const existingUser = await getUser(getOpenid());
-  if (!isRegisteredUser(existingUser)) {
-    return { success: true, loggedIn: false, user: existingUser ? toClientUser(existingUser) : null, family: null };
-  }
-  const user = await ensureUser(event.profile);
+  // 静默登录：用微信 openid 自动建号，不要求用户授权头像昵称
+  const user = await ensureUser();
   const pendingInviteCode = String(event.inviteCode || "").trim().toUpperCase();
   if (pendingInviteCode) {
     try {
@@ -611,7 +607,7 @@ const renameFamily = async (event) => {
 };
 
 const updateUserProfile = async (event) => {
-  const user = await ensureUser({ nickName: event.nickName, avatarUrl: event.avatarUrl });
+  const user = await ensureUser({ nickName: event.nickName, avatarUrl: event.avatarUrl, registered: true });
   const memberships = await db.collection("family_members").where({ openid: user.openid, status: "active" }).get();
   await Promise.all(memberships.data.map((member) => db.collection("family_members").doc(member._id).update({ data: { nickName: user.nickName, avatarUrl: user.avatarUrl, updatedAt: new Date() } })));
   await Promise.all(memberships.data.map((member) => writeOperationLog(member.familyId, "user.profile.update", user.openid, {})));
