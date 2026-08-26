@@ -68,6 +68,11 @@
       <text class="menu-text">反馈管理</text>
       <text class="menu-arrow">›</text>
     </view>
+    <view wx:if="{{isDeveloper}}" class="menu-item" bindtap="goTestTools">
+      <text class="menu-icon">🧹</text>
+      <text class="menu-text">测试工具</text>
+      <text class="menu-arrow">›</text>
+    </view>
   </view>
 
   <view class="account-danger" bindtap="cancelAccount">注销账号</view>

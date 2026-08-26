@@ -1,0 +1,21 @@
+<view class="page">
+  <view class="warn-banner">仅开发者可用，清除操作不可恢复，请谨慎操作。</view>
+
+  <view class="card">
+    <view class="card-head">
+      <text class="card-title">数据清除</text>
+      <text class="refresh" bindtap="loadCounts">↻ 刷新</text>
+    </view>
+    <view wx:for="{{options}}" wx:key="key" class="row {{item.danger ? 'danger' : ''}}" data-key="{{item.key}}" bindtap="onClear">
+      <view class="row-main">
+        <text class="row-label">{{item.label}}</text>
+        <text class="row-desc">{{item.desc}}</text>
+      </view>
+      <view class="row-right">
+        <text wx:if="{{item.counts.length}}" class="row-count">{{item.counts}}</text>
+        <text class="row-go">清除</text>
+      </view>
+    </view>
+  </view>
+  <privacy-popup />
+</view>

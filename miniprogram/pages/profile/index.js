@@ -65,6 +65,10 @@ Page({
     wx.navigateTo({ url: "/pages/feedbackAdmin/index" });
   },
 
+  goTestTools() {
+    wx.navigateTo({ url: "/pages/testTools/index" });
+  },
+
   onFamilyChanged(family) {
     if (!family) {
       this.setData({ familyName: "待确认邀请", isAdmin: false, isOwner: false, familyAdminName: "", roleReady: false });

@@ -17,7 +17,8 @@
     "pages/logs/index",
     "pages/search/index",
     "pages/feedback/index",
-    "pages/feedbackAdmin/index"
+    "pages/feedbackAdmin/index",
+    "pages/testTools/index"
   ],
   "window": {
     "backgroundColor": "#FFF8EC",

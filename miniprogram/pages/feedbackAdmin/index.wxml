@@ -19,7 +19,7 @@
       <view class="admin-time">{{item.createTimeText}}</view>
     </view>
     <view class="admin-text">{{item.content}}</view>
-    <view wx:if="{{item.contact}}" class="admin-contact">📱 {{item.contact}}</view>
+    <view wx:if="{{item.contact}}" class="admin-contact" catchtap="copyContact" data-contact="{{item.contact}}">📱 {{item.contact}}<text class="copy-hint">点击复制</text></view>
     <view class="admin-foot">
       <text wx:if="{{item.imageCount > 0}}" class="foot-item">🖼️ {{item.imageCount}} 张截图</text>
       <text wx:if="{{item.reply}}" class="foot-item replied">已回复</text>
@@ -45,7 +45,7 @@
           <image wx:for="{{detail.images}}" wx:key="*this" src="{{item}}" mode="aspectFill" class="detail-img" catchtap="previewImage" data-url="{{item}}" data-urls="{{detail.images}}"></image>
         </view>
         <view class="detail-meta">
-          <view wx:if="{{detail.contact}}">联系方式：{{detail.contact}}</view>
+          <view wx:if="{{detail.contact}}" class="meta-contact" bindtap="copyContact" data-contact="{{detail.contact}}">联系方式：{{detail.contact}}<text class="copy-hint">点击复制</text></view>
           <view wx:if="{{detail.pagePath}}">来源页面：{{detail.pagePath}}</view>
           <view wx:if="{{detail.deviceText}}">设备环境：{{detail.deviceText}}</view>
           <view wx:if="{{detail.envVersion}}">运行版本：{{detail.appVersion || '未配置版本号'}}（{{detail.envVersion === 'develop' ? '开发版' : detail.envVersion === 'trial' ? '体验版' : detail.envVersion === 'release' ? '正式版' : detail.envVersion}}）</view>

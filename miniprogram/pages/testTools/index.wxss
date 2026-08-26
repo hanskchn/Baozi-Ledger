@@ -1,0 +1,90 @@
+.page {
+  padding: 24rpx 0 40rpx;
+}
+
+.warn-banner {
+  margin: 0 24rpx 24rpx;
+  padding: 20rpx 24rpx;
+  border-radius: 12rpx;
+  background: #FFF3E0;
+  color: #E65100;
+  font-size: 26rpx;
+  line-height: 1.5;
+}
+
+.card {
+  margin: 0 24rpx;
+  background: #FFFFFF;
+  border-radius: 16rpx;
+  overflow: hidden;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28rpx 32rpx 12rpx;
+}
+
+.card-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #5D4037;
+}
+
+.refresh {
+  font-size: 26rpx;
+  color: #FF8C42;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  padding: 28rpx 32rpx;
+  border-top: 1rpx solid #F5EBE0;
+}
+
+.row-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.row-label {
+  font-size: 30rpx;
+  color: #5D4037;
+}
+
+.row-desc {
+  margin-top: 6rpx;
+  font-size: 24rpx;
+  color: #BCAAA4;
+}
+
+.row-right {
+  display: flex;
+  align-items: center;
+}
+
+.row-count {
+  margin-right: 20rpx;
+  padding: 2rpx 14rpx;
+  border-radius: 20rpx;
+  background: #F5EBE0;
+  font-size: 22rpx;
+  color: #8D6E63;
+}
+
+.row-go {
+  font-size: 26rpx;
+  color: #FF8C42;
+}
+
+.row.danger .row-label {
+  color: #D64545;
+  font-weight: 600;
+}
+
+.row.danger .row-go {
+  color: #D64545;
+}

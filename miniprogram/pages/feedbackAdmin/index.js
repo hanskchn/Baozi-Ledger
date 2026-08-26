@@ -173,6 +173,15 @@ Page({
     wx.previewImage({ current: url, urls });
   },
 
+  copyContact(event) {
+    const contact = event.currentTarget.dataset.contact;
+    if (!contact) return;
+    wx.setClipboardData({
+      data: String(contact),
+      fail: () => wx.showToast({ title: "复制失败", icon: "none" })
+    });
+  },
+
   async saveReply() {
     if (this.data.saving || !this.data.detail) return;
     const reply = this.data.replyText.trim();
