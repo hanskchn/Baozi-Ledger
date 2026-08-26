@@ -21,6 +21,9 @@ const ALL_COLLECTIONS = [
   "feedbacks"
 ];
 
+const CLEAR_PARALLEL = 5;
+const CLEAR_BATCH = 100;
+
 const getOpenid = () => cloud.getWXContext().OPENID;
 
 const countCollection = async (name) => {
@@ -41,11 +44,22 @@ const clearCollection = async (name) => {
     }
     let removed = 0;
     for (;;) {
-      const batch = await db.collection(name).limit(100).get();
-      if (!batch.data.length) break;
-      const ids = batch.data.map((item) => item._id);
+      // 并行拉取 5 页（每页 100 条）的 _id，再一次性删除整批，减少串行往返
+      const pages = await Promise.all(
+        Array.from({ length: CLEAR_PARALLEL }, (_, index) =>
+          db.collection(name).field({ _id: true }).skip(index * CLEAR_BATCH).limit(CLEAR_BATCH).get()
+        )
+      );
+      const ids = [];
+      for (const page of pages) {
+        for (const item of page.data || []) {
+          if (!ids.includes(item._id)) ids.push(item._id);
+        }
+      }
+      if (!ids.length) break;
       await db.collection(name).where({ _id: db.command.in(ids) }).remove();
       removed += ids.length;
+      if (ids.length < CLEAR_PARALLEL * CLEAR_BATCH) break;
     }
     return { success: true, name, removed };
   } catch (error) {
@@ -79,9 +93,6 @@ exports.main = async (event) => {
   }
 
   const before = await getCounts(targets);
-  const results = [];
-  for (const name of targets) {
-    results.push(await clearCollection(name));
-  }
+  const results = await Promise.all(targets.map((name) => clearCollection(name)));
   return { success: true, before, results };
 };

@@ -55,12 +55,15 @@ Page({
     }
     wx.showLoading({ title: "切换中", mask: true });
     try {
-      const result = await this.callFunction("getFamilyDetail", { familyId });
-      app.onFamilyChange(result.family);
+      // 不再先拉全量账本详情（getFamilyDetail 含账单聚合，较慢），
+      // 直接落本地切换状态返回，family 页 onShow 会以新账本重新加载
+      wx.setStorageSync("currentFamilyId", familyId);
+      app.globalData.currentFamilyId = familyId;
+      app.globalData.currentFamily = null;
       app.initializePromise = null;
       wx.hideLoading();
       wx.showToast({ title: "已切换账本" });
-      setTimeout(() => wx.navigateBack(), 400);
+      wx.navigateBack();
     } catch (error) {
       wx.hideLoading();
       wx.showToast({ title: error.message || "切换失败", icon: "none" });

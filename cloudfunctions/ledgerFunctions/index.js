@@ -123,18 +123,21 @@ const countFamilyBills = async (familyId) => {
     return 0;
   }
 };
-// 成员累计记账笔数（不限月份），用于成员卡展示
-const countMemberBills = async (familyId, openids) => {
+
+// 按指定字段分组统计账单笔数，一次聚合替代 N+1 次 count 查询
+const aggregateBillCounts = async (match, groupField) => {
   const counts = {};
-  await Promise.all(openids.map(async (openid) => {
-    try {
-      const result = await db.collection("bills").where({ familyId, deleted: false, memberOpenid: openid }).count();
-      counts[openid] = result.total || 0;
-    } catch (error) {
-      console.warn("countMemberBills failed", familyId, openid, error);
-      counts[openid] = 0;
+  try {
+    const result = await db.collection("bills").aggregate()
+      .match(match)
+      .group({ _id: "$" + groupField, count: db.command.aggregate.sum(1) })
+      .end();
+    for (const item of result.list || []) {
+      counts[item._id] = Number(item.count) || 0;
     }
-  }));
+  } catch (error) {
+    console.warn("aggregateBillCounts failed", match, error);
+  }
   return counts;
 };
 
@@ -520,11 +523,13 @@ const initUser = async (event) => {
 const listFamilies = async () => {
   const openid = getOpenid();
   const memberships = await getValidMemberships(openid);
+  const billCounts = memberships.length
+    ? await aggregateBillCounts({ familyId: db.command.in(memberships.map((item) => item.family._id)), deleted: false }, "familyId")
+    : {};
   const families = await Promise.all(memberships.map(async ({ member, family }) => {
     const activeMembers = await getFamilyMembers(family._id, "active");
     const admin = activeMembers.find((item) => item.role === "admin");
     const isOwner = family.adminOpenid === openid;
-    const totalBillCount = await countFamilyBills(family._id);
     return {
       id: family._id,
       name: family.name,
@@ -532,7 +537,7 @@ const listFamilies = async () => {
       role: member.role,
       adminName: admin?.nickName || "管理员",
       isOwner,
-      totalBillCount,
+      totalBillCount: billCounts[family._id] || 0,
       maxMemberCount: MAX_FAMILY_MEMBERS,
       createdAt: family.createdAt
     };
@@ -654,10 +659,9 @@ const getFamilyDetail = async (event) => {
   const family = await getFamily(event.familyId);
   const members = await getFamilyMembers(event.familyId, "active");
   const admin = members.find((item) => item.role === "admin");
-  const [totalBillCount, billCounts] = await Promise.all([
-    countFamilyBills(family._id),
-    countMemberBills(family._id, members.map((item) => item.openid))
-  ]);
+  // 一次聚合同时得出总笔数与各成员笔数，替代原来的 N+1 次 count
+  const billCounts = await aggregateBillCounts({ familyId: family._id, deleted: false }, "memberOpenid");
+  const totalBillCount = Object.values(billCounts).reduce((sum, count) => sum + count, 0);
   return {
     success: true,
     family: {
