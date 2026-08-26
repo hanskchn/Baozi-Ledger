@@ -9,4 +9,5 @@
     </view>
   </view>
   <button class="btn-outline" bindtap="addAccount">+ 添加账户</button>
+<privacy-popup />
 </view>

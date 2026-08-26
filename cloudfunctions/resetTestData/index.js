@@ -1,16 +1,22 @@
-// 临时测试数据重置函数（验收用，验证后删除）
+// 测试数据重置函数（仅开发者可调用，验收用）
 // 创建缺失集合 + 清空全部业务集合数据
 const cloud = require("wx-server-sdk");
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 const db = cloud.database();
 
+const DEVELOPER_OPENIDS = ["oEntM3edll4iSPXTT0RzgomZNFIM"];
+
 const COLLECTIONS = [
   "users", "families", "family_members", "family_invites",
   "categories", "accounts", "bills", "budgets",
-  "bill_preferences", "operation_logs", "initialization_locks"
+  "bill_preferences", "operation_logs", "initialization_locks", "feedbacks"
 ];
 
 exports.main = async () => {
+  const openid = cloud.getWXContext().OPENID;
+  if (!DEVELOPER_OPENIDS.includes(openid)) {
+    throw new Error("无权限执行该操作");
+  }
   const results = {};
   for (const name of COLLECTIONS) {
     try {
@@ -29,7 +35,7 @@ exports.main = async () => {
         await db.collection(name).where({ _id: db.command.in(ids) }).remove();
         removed += ids.length;
       }
-      results[name] = `${note}, cleared=${removed}`;
+      results[name] = note + ", cleared=" + removed;
     } catch (e) {
       results[name] = "ERROR " + (e.message || e);
     }

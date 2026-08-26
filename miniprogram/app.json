@@ -15,7 +15,9 @@
     "pages/import/index",
     "pages/export/index",
     "pages/logs/index",
-    "pages/search/index"
+    "pages/search/index",
+    "pages/feedback/index",
+    "pages/feedbackAdmin/index"
   ],
   "window": {
     "backgroundColor": "#FFF8EC",
@@ -58,5 +60,14 @@
   },
   "sitemapLocation": "sitemap.json",
   "style": "v2",
-  "lazyCodeLoading": "requiredComponents"
+  "lazyCodeLoading": "requiredComponents",
+  "__usePrivacyCheck__": true,
+  "usingComponents": {
+    "privacy-popup": "/components/privacy-popup/index"
+  },
+  "permission": {
+    "scope.writePhotosAlbum": {
+      "desc": "用于保存家庭账本邀请二维码到相册，方便分享给家人扫码加入"
+    }
+  }
 }

@@ -17,4 +17,5 @@
       <text class="result-amount {{item.type}}">{{item.type === 'expense' ? '-' : '+'}}¥{{item.amount}}</text>
     </view>
   </view>
+<privacy-popup />
 </view>

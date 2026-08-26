@@ -15,4 +15,5 @@
       <button bindtap="removeBill" class="danger">删除账单</button>
     </view>
   </view>
+<privacy-popup />
 </view>

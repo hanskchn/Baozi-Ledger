@@ -897,6 +897,10 @@ const removeMember = async (event) => {
 
 const leaveFamily = async (event) => {
   const openid = getOpenid();
+  const memberships = await getValidMemberships(openid);
+  if (memberships.length === 1 && memberships[0].family._id === event.familyId) {
+    throw new Error("你至少需要保留一个账本，无法退出唯一的账本");
+  }
   const now = new Date();
   const memberId = await db.runTransaction(async (transaction) => {
     const family = (await transaction.collection("families").doc(event.familyId).get()).data;
@@ -947,13 +951,20 @@ const getAccountCancellationStatus = async () => {
   const memberships = await getValidMemberships(openid);
   const adminFamilies = await Promise.all(memberships.filter((item) => item.member.role === "admin").map(async ({ family }) => {
     const activeMembers = await getFamilyMembers(family._id, "active");
-    return { id: family._id, name: family.name, memberCount: activeMembers.length, canDissolve: activeMembers.length === 1 };
+    return { id: family._id, name: family.name, memberCount: activeMembers.length, canDissolve: true };
   }));
   return { success: true, canCancel: adminFamilies.length === 0, adminFamilies };
 };
 
 const dissolveFamily = async (event) => {
   const openid = getOpenid();
+  // 注销流程会批量解散管理员账本，此时允许解散最后一个账本（注销后会重新建号）
+  if (!event.forceLastFamily) {
+    const memberships = await getValidMemberships(openid);
+    if (memberships.length === 1 && memberships[0].family._id === event.familyId) {
+      throw new Error("你至少需要保留一个账本，无法解散唯一的账本");
+    }
+  }
   const now = new Date();
   const deleteAfter = new Date(now.getTime() + DISSOLVE_RETENTION_DAYS * 24 * 60 * 60 * 1000);
   const result = await db.runTransaction(async (transaction) => {
@@ -1048,14 +1059,37 @@ const purgeExpiredFamilies = async () => {
 const cancelAccount = async () => {
   const openid = getOpenid();
   const cancellation = await getAccountCancellationStatus();
-  if (!cancellation.canCancel) throw new Error("请先转让或解散你管理的账本");
+  if (!cancellation.canCancel) throw new Error("请先解散你管理的账本");
   const now = new Date();
-  const memberships = (await getMembershipsByOpenid(openid)).filter((item) => item.status === "active");
-  // Each step is idempotent so a retry can finish safely after a transient failure.
-  for (const member of memberships) {
-    await db.collection("family_members").doc(member._id).update({ data: { status: "cancelled", leftAt: now, nickName: "已注销用户", avatarUrl: "", updatedAt: now } });
-    const logId = getStableDocumentId("account-cancel-log", member.familyId, member._id);
-    await db.collection("operation_logs").doc(logId).set({ data: { familyId: member.familyId, action: "user.account.cancel", targetId: member._id, operatorOpenId: openid, summary: {}, createdAt: now } });
+  const activeMemberships = (await getMembershipsByOpenid(openid)).filter((item) => item.status === "active");
+  // 按账本分组：同一账本可能有遗留重复成员记录，需在同一事务内一起处理，
+  // 并原子地更新 families.activeMemberCount / membershipRevision（与 leaveFamily 保持一致）。
+  const byFamily = new Map();
+  for (const member of activeMemberships) {
+    if (!byFamily.has(member.familyId)) byFamily.set(member.familyId, []);
+    byFamily.get(member.familyId).push(member);
+  }
+  for (const [familyId, records] of byFamily) {
+    await db.runTransaction(async (transaction) => {
+      const familyResult = await transaction.collection("families").doc(familyId).get();
+      const family = familyResult && familyResult.data;
+      if (family && family.status !== "dissolved") {
+        const allActive = await transaction.collection("family_members").where({ familyId, status: "active" }).limit(FAMILY_MEMBER_QUERY_LIMIT).get();
+        const activeOpenids = new Set(allActive.data.map((item) => item.openid));
+        for (const record of records) {
+          await transaction.collection("family_members").doc(record._id).update({ data: { status: "cancelled", leftAt: now, nickName: "已注销用户", avatarUrl: "", updatedAt: now } });
+        }
+        await transaction.collection("families").doc(familyId).update({
+          data: { activeMemberCount: Math.max(1, activeOpenids.size - 1), membershipRevision: Number(family.membershipRevision || 0) + 1, updatedAt: now }
+        });
+      } else {
+        for (const record of records) {
+          await transaction.collection("family_members").doc(record._id).update({ data: { status: "cancelled", leftAt: now, nickName: "已注销用户", avatarUrl: "", updatedAt: now } });
+        }
+      }
+      const logId = getStableDocumentId("account-cancel-log", familyId, openid);
+      await transaction.collection("operation_logs").doc(logId).set({ data: { familyId, action: "user.account.cancel", targetId: records[0]._id, operatorOpenId: openid, summary: {}, createdAt: now } });
+    });
   }
   const preferences = await db.collection("bill_preferences").where({ openid }).limit(100).get();
   await Promise.all(preferences.data.map((item) => db.collection("bill_preferences").doc(item._id).remove()));

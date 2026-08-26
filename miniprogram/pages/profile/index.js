@@ -11,7 +11,9 @@ Page({
     roleReady: false,
     showProfileSheet: false,
     savingProfile: false,
-    sheetAvatarUrl: ""
+    sheetAvatarUrl: "",
+    isDeveloper: false,
+    unreadCount: 0
   },
 
   async onShow() {
@@ -33,6 +35,34 @@ Page({
     } catch (error) {
       wx.showToast({ title: error.message || "加载失败", icon: "none" });
     }
+    this.refreshFeedbackState();
+  },
+
+  async callFeedback(action, data = {}) {
+    const response = await wx.cloud.callFunction({ name: "feedbackFunctions", data: { ...data, action } });
+    if (!response.result?.success) throw new Error(response.result?.message || "操作失败");
+    return response.result;
+  },
+
+  async refreshFeedbackState() {
+    try {
+      const [whoami, unread] = await Promise.all([
+        this.callFeedback("whoami"),
+        this.callFeedback("getUnreadCount")
+      ]);
+      this.setData({ isDeveloper: Boolean(whoami.isDeveloper), unreadCount: unread.count || 0 });
+    } catch (error) {
+      // 反馈模块异常不影响「我的」页主流程
+      console.warn("刷新反馈状态失败", error);
+    }
+  },
+
+  goFeedback() {
+    wx.navigateTo({ url: "/pages/feedback/index" });
+  },
+
+  goFeedbackAdmin() {
+    wx.navigateTo({ url: "/pages/feedbackAdmin/index" });
   },
 
   onFamilyChanged(family) {
@@ -154,19 +184,16 @@ Page({
     try {
       const status = await this.callLedger("getAccountCancellationStatus");
       if (!status.canCancel) {
-        const dissolvable = status.adminFamilies.filter((item) => item.canDissolve);
-        const transferRequired = status.adminFamilies.filter((item) => !item.canDissolve);
-        if (transferRequired.length) {
-          const names = transferRequired.map((item) => item.name).join("、");
-          wx.showModal({ title: "暂不能注销", content: "你仍管理“" + names + "”。请先在家庭管理中转让管理员，再回来继续注销。", confirmText: "去管理", success: (modal) => { if (modal.confirm) this.goFamily(); } });
-          return;
-        }
-        const names = dissolvable.map((item) => "“" + item.name + "”").join("、");
-        const confirmation = await new Promise((resolve) => wx.showModal({ title: "处理后继续注销", content: "你是 " + names + " 的唯一成员。继续将逐个解散这些账本，然后注销账号；账本不可恢复。", confirmText: "继续处理", confirmColor: "#D64545", success: resolve }));
+        const lines = status.adminFamilies.map((item) => {
+          const label = "“" + item.name + "”";
+          return item.memberCount <= 1 ? label + "（唯一成员）" : label + "（还有 " + (item.memberCount - 1) + " 位成员）";
+        });
+        const content = "注销需先解散你管理的账本：\n" + lines.join("\n") + "\n\n解散后所有成员将失去访问权，数据保留 30 天期间可还原。";
+        const confirmation = await new Promise((resolve) => wx.showModal({ title: "处理后继续注销", content, confirmText: "继续解散", confirmColor: "#D64545", success: resolve }));
         if (!confirmation.confirm) return;
-        wx.showLoading({ title: "处理中", mask: true });
+        wx.showLoading({ title: "解散中", mask: true });
         try {
-          await dissolvable.reduce((promise, family) => promise.then(() => this.callLedger("dissolveFamily", { familyId: family.id })), Promise.resolve());
+          await status.adminFamilies.reduce((promise, family) => promise.then(() => this.callLedger("dissolveFamily", { familyId: family.id, forceLastFamily: true })), Promise.resolve());
         } finally {
           wx.hideLoading();
         }

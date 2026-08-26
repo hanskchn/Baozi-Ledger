@@ -171,4 +171,5 @@
       <view class="time-btn-confirm" bindtap="confirmTimeSheet">确定</view>
     </view>
   </view>
+<privacy-popup />
 </view>

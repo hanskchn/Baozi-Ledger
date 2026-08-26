@@ -1,0 +1,11 @@
+<view wx:if="{{show}}" class="privacy-mask" catchtouchmove="noop">
+  <view class="privacy-card">
+    <view class="privacy-icon">🔒</view>
+    <text class="privacy-title">用户隐私保护提示</text>
+    <text class="privacy-desc">感谢你使用包子账本。在你使用前，请阅读<text class="privacy-link" bindtap="openContract">用户隐私保护指引</text>。我们将按照指引处理你的信息，用于记账、家庭协作和问题反馈。</text>
+    <view class="privacy-actions">
+      <button class="privacy-btn secondary" bindtap="handleDisagree">暂不同意</button>
+      <button id="agree-btn" class="privacy-btn primary" open-type="agreePrivacyAuthorization" bindagreeprivacyauthorization="handleAgree">同意并继续</button>
+    </view>
+  </view>
+</view>

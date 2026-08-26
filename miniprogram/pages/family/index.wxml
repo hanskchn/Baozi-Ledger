@@ -177,4 +177,5 @@
   <text class="invite-tip invite-tip-center">邀请码由对方账本的管理员生成，7 天内有效</text>
   <view class="primary-btn {{joinCode.length === 8 ? '' : 'primary-btn-off'}}" bindtap="submitJoinCode">下一步</view>
   <view class="sheet-cancel" bindtap="closeJoinInput">取消</view>
+<privacy-popup />
 </view>

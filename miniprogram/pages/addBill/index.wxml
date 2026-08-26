@@ -159,4 +159,5 @@
       </picker>
     </view>
   </view>
+<privacy-popup />
 </view>

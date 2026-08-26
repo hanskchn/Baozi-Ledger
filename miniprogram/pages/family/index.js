@@ -572,12 +572,18 @@ Page({
       wx.showToast({ title: "管理员请先转让管理权", icon: "none" });
       return;
     }
+    if (this.data.families.length <= 1) {
+      wx.showModal({ title: "无法退出", content: "你至少需要保留一个账本，无法退出唯一的账本。", showCancel: false });
+      return;
+    }
     const modal = await new Promise((resolve) => wx.showModal({ title: "退出账本", content: "退出后将无法继续查看该账本，确定继续吗？", success: resolve }));
     if (!modal.confirm) return;
     try {
       await this.callFunction("leaveFamily", { familyId: this.data.currentFamilyId });
       wx.removeStorageSync("currentFamilyId");
+      wx.removeStorageSync("currentFamilyCache");
       app.globalData.currentFamilyId = "";
+      app.globalData.currentFamily = null;
       app.initializePromise = null;
       wx.showToast({ title: "已退出" });
       await this.loadFamilies();
@@ -586,6 +592,10 @@ Page({
 
   async dissolveFamily() {
     this.setData({ settingsVisible: false });
+    if (this.data.families.length <= 1) {
+      wx.showModal({ title: "无法解散", content: "你至少需要保留一个账本，无法解散唯一的账本。", showCancel: false });
+      return;
+    }
     const familyName = this.data.currentFamilyName || "该账本";
     const confirm1 = await new Promise((resolve) => wx.showModal({
       title: "解散账本",
@@ -608,6 +618,7 @@ Page({
       await this.callFunction("dissolveFamily", { familyId: this.data.currentFamilyId });
       wx.hideLoading();
       wx.removeStorageSync("currentFamilyId");
+      wx.removeStorageSync("currentFamilyCache");
       app.globalData.currentFamilyId = "";
       app.globalData.currentFamily = null;
       app.initializePromise = null;

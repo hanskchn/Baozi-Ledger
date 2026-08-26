@@ -9,6 +9,14 @@ App({
 
   onLaunch() {
     this._sessionDeclinedCodes = new Set();
+    this._privacyPopups = [];
+    this.privacyAuthorizationResolve = null;
+    if (wx.onNeedPrivacyAuthorization) {
+      wx.onNeedPrivacyAuthorization((resolve) => {
+        this.privacyAuthorizationResolve = resolve;
+        this._privacyPopups.forEach((popup) => popup.open());
+      });
+    }
     if (!wx.cloud) {
       console.error("请使用 2.2.3 或以上的基础库以使用云能力");
     } else {
@@ -59,6 +67,21 @@ App({
   },
 
   // 登出/注销后清空全部登录与账本状态
+  registerPrivacyPopup(popup) {
+    if (!this._privacyPopups.includes(popup)) this._privacyPopups.push(popup);
+  },
+
+  unregisterPrivacyPopup(popup) {
+    this._privacyPopups = this._privacyPopups.filter((item) => item !== popup);
+  },
+
+  resolvePrivacyAuthorization(result) {
+    const resolve = this.privacyAuthorizationResolve;
+    this.privacyAuthorizationResolve = null;
+    this._privacyPopups.forEach((popup) => popup.close());
+    if (resolve) resolve(result);
+  },
+
   clearSession() {
     this.initializePromise = null;
     this.globalData.currentFamily = null;
@@ -68,6 +91,8 @@ App({
       wx.removeStorageSync("currentFamilyId");
       wx.removeStorageSync("currentFamilyCache");
       wx.removeStorageSync("hasDismissedNicknameTip");
+      wx.removeStorageSync("hasSeenWelcome");
+      wx.removeStorageSync("welcomePending");
     } catch (error) { /* ignore */ }
   },
 

@@ -46,4 +46,5 @@
 
 <view class="footer">
   <view class="primary-btn" bindtap="createFamily">＋ 创建新账本</view>
+<privacy-popup />
 </view>

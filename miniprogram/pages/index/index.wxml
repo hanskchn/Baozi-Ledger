@@ -182,4 +182,5 @@
     <button class="invite-btn-primary" bindtap="confirmPendingInvite">{{pendingInvite.alreadyMember ? '切换到此账本' : '确认加入'}}</button>
     <button class="invite-btn-secondary" bindtap="declinePendingInvite">暂不加入</button>
   </view>
+<privacy-popup />
 </view>

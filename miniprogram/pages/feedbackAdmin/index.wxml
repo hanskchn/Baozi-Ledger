@@ -1,0 +1,75 @@
+<view class="page">
+  <view class="filter-row">
+    <view wx:for="{{filters}}" wx:key="value" class="filter-tab {{currentFilter === item.value ? 'active' : ''}}" bindtap="switchFilter" data-value="{{item.value}}">
+      {{item.label}}<text wx:if="{{item.count > 0}}" class="filter-count">{{item.count}}</text>
+    </view>
+  </view>
+
+  <view wx:if="{{list.length === 0 && !loading}}" class="empty">
+    <view class="empty-icon">🎉</view>
+    <view class="empty-text">暂无反馈</view>
+  </view>
+
+  <view wx:for="{{list}}" wx:key="id" class="admin-item" bindtap="openDetail" data-id="{{item.id}}">
+    <view class="admin-head">
+      <image wx:if="{{item.submitter.avatarUrl}}" class="admin-avatar" src="{{item.submitter.avatarUrl}}"></image>
+      <view wx:else class="admin-avatar">{{item.submitter.nickName[0]}}</view>
+      <view class="admin-name">{{item.submitter.nickName}}</view>
+      <view class="badge badge-{{item.status}}">{{statusText[item.status]}}</view>
+      <view class="admin-time">{{item.createTimeText}}</view>
+    </view>
+    <view class="admin-text">{{item.content}}</view>
+    <view wx:if="{{item.contact}}" class="admin-contact">📱 {{item.contact}}</view>
+    <view class="admin-foot">
+      <text wx:if="{{item.imageCount > 0}}" class="foot-item">🖼️ {{item.imageCount}} 张截图</text>
+      <text wx:if="{{item.reply}}" class="foot-item replied">已回复</text>
+      <text class="foot-item version" wx:if="{{item.appVersion}}">{{item.appVersion}}</text>
+    </view>
+  </view>
+
+  <view wx:if="{{list.length > 0 && hasMore}}" class="load-more" bindtap="loadMore">{{loadingMore ? '加载中...' : '加载更多'}}</view>
+  <view wx:if="{{list.length > 0 && !hasMore}}" class="load-end">没有更多了</view>
+
+  <!-- 详情弹层 -->
+  <view wx:if="{{showDetail}}" class="mask" bindtap="closeDetail" catchtouchmove="noop"></view>
+  <view wx:if="{{showDetail}}" class="sheet" catchtouchmove="noop">
+    <view class="sheet-handle"></view>
+    <scroll-view scroll-y class="sheet-body">
+      <view wx:if="{{detail}}">
+        <view class="detail-head">
+          <view class="fb-type {{detail.type}}">{{typeText[detail.type]}}</view>
+          <view class="badge badge-{{detail.status}}">{{statusText[detail.status]}}</view>
+        </view>
+        <view class="detail-content">{{detail.content}}</view>
+        <view wx:if="{{detail.images.length > 0}}" class="detail-imgs">
+          <image wx:for="{{detail.images}}" wx:key="*this" src="{{item}}" mode="aspectFill" class="detail-img" catchtap="previewImage" data-url="{{item}}" data-urls="{{detail.images}}"></image>
+        </view>
+        <view class="detail-meta">
+          <view wx:if="{{detail.contact}}">联系方式：{{detail.contact}}</view>
+          <view wx:if="{{detail.pagePath}}">来源页面：{{detail.pagePath}}</view>
+          <view wx:if="{{detail.deviceText}}">设备环境：{{detail.deviceText}}</view>
+          <view wx:if="{{detail.envVersion}}">运行版本：{{detail.appVersion || '未配置版本号'}}（{{detail.envVersion === 'develop' ? '开发版' : detail.envVersion === 'trial' ? '体验版' : detail.envVersion === 'release' ? '正式版' : detail.envVersion}}）</view>
+          <view wx:if="{{detail.submitter}}">提交人：{{detail.submitter.nickName}}</view>
+          <view wx:if="{{detail.createTimeText}}">提交时间：{{detail.createTimeText}}</view>
+        </view>
+
+        <view wx:if="{{detail.reply}}" class="reply-box">
+          <view class="reply-label">上次回复：</view>
+          <view class="reply-text">{{detail.reply}}</view>
+        </view>
+
+        <view class="form-label">回复内容</view>
+        <textarea class="reply-input" placeholder="输入回复内容（用户可在「我的反馈」中看到）" placeholder-class="placeholder" maxlength="500" value="{{replyText}}" bindinput="onReplyInput"></textarea>
+        <view class="form-label">更新状态</view>
+        <view class="status-row">
+          <view wx:for="{{statusOptions}}" wx:key="value" class="status-chip {{detail.status === item.value ? 'active' : ''}}" bindtap="selectStatus" data-value="{{item.value}}">{{item.label}}</view>
+        </view>
+      </view>
+    </scroll-view>
+    <view class="sheet-actions">
+      <button class="btn-cancel" bindtap="closeDetail">关闭</button>
+      <button class="btn-save" bindtap="saveReply" loading="{{saving}}" disabled="{{saving}}">保存回复</button>
+    </view>
+  </view>
+<privacy-popup />
+</view>

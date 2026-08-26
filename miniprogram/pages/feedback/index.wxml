@@ -1,0 +1,75 @@
+<view class="page">
+  <view class="tabs">
+    <view class="tab {{activeTab === 'submit' ? 'active' : ''}}" bindtap="switchTab" data-tab="submit">提交反馈</view>
+    <view class="tab {{activeTab === 'mine' ? 'active' : ''}}" bindtap="switchTab" data-tab="mine">
+      我的反馈
+      <text wx:if="{{unreadCount > 0}}" class="tab-dot">{{unreadCount > 99 ? '99+' : unreadCount}}</text>
+    </view>
+  </view>
+
+  <view wx:if="{{activeTab === 'submit'}}" class="tab-body">
+    <view class="card">
+      <view class="field-label">反馈类型</view>
+      <view class="type-row">
+        <view wx:for="{{typeOptions}}" wx:key="value" class="type-chip {{form.type === item.value ? 'active' : ''}}" bindtap="selectType" data-value="{{item.value}}">{{item.label}}</view>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="field-label">问题描述</view>
+      <textarea class="content-input" placeholder="请详细描述你遇到的问题或建议（10-500 字），Bug 请说明复现步骤" placeholder-class="placeholder" maxlength="500" value="{{form.content}}" bindinput="onContentInput" auto-height></textarea>
+      <view class="counter">{{form.content.length}} / 500</view>
+    </view>
+
+    <view class="card">
+      <view class="field-label">截图（选填，最多 {{maxImages}} 张）</view>
+      <view class="img-row">
+        <view wx:for="{{form.images}}" wx:key="*this" class="img-thumb">
+          <image src="{{item}}" mode="aspectFill" class="img-el"></image>
+          <view class="img-del" catchtap="removeImage" data-index="{{index}}">×</view>
+        </view>
+        <view wx:if="{{form.images.length < maxImages}}" class="img-add" bindtap="chooseImage">
+          <text class="img-add-plus">+</text>
+          <text class="img-add-tip">添加截图</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="field-label">联系方式（选填）</view>
+      <input class="contact-input" placeholder="微信号 / 手机号，方便我们回复你" placeholder-class="placeholder" maxlength="50" value="{{form.contact}}" bindinput="onContactInput" />
+    </view>
+
+    <button class="submit-btn" bindtap="submit" loading="{{submitting}}" disabled="{{submitting}}">提交反馈</button>
+    <view class="tips">系统会自动附加机型、微信版本和当前页面，帮助我们更快定位问题</view>
+    <view class="dev-id" bindtap="copyOpenid" wx:if="{{openid}}">身份ID：{{openidShort}}（点击复制）</view>
+  </view>
+
+  <view wx:if="{{activeTab === 'mine'}}" class="tab-body">
+    <view wx:if="{{mineList.length === 0 && !loadingMine}}" class="empty">
+      <view class="empty-icon">📭</view>
+      <view class="empty-text">还没有提交过反馈</view>
+    </view>
+
+    <view wx:for="{{mineList}}" wx:key="id" class="fb-item" bindtap="openDetail" data-id="{{item.id}}">
+      <view class="fb-item-top">
+        <view class="fb-type {{item.type}}">{{typeText[item.type]}}</view>
+        <view class="badge badge-{{item.status}}">{{statusText[item.status]}}</view>
+      </view>
+      <view class="fb-content">{{item.content}}</view>
+      <view wx:if="{{item.reply}}" class="reply-box">
+        <view class="reply-label">开发者回复：</view>
+        <view class="reply-text">{{item.reply}}</view>
+      </view>
+      <view wx:elif="{{item.hasUnreadReply}}" class="reply-hint"><text class="reply-dot"></text> 有新回复，点击查看</view>
+      <view class="fb-meta">
+        <text>{{item.createTimeText}}</text>
+        <text wx:if="{{item.appVersion}}">{{item.appVersion}}</text>
+      </view>
+    </view>
+
+    <view wx:if="{{mineList.length > 0 && hasMore}}" class="load-more" bindtap="loadMoreMine">{{loadingMore ? '加载中...' : '加载更多'}}</view>
+    <view wx:if="{{mineList.length > 0 && !hasMore}}" class="load-end">没有更多了</view>
+  </view>
+<privacy-popup />
+</view>

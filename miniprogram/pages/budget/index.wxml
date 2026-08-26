@@ -62,4 +62,5 @@
   </view>
 
   <button wx:if="{{isAdmin}}" class="save-btn" bindtap="saveBudget">保存</button>
+<privacy-popup />
 </view>
