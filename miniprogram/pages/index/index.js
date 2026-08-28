@@ -57,7 +57,8 @@ Page({
   },
 
   onShow() {
-    // 刚记完账/编辑/删除过账单：跳过首页摘要缓存，避免短暂闪旧数据
+    // 刚记完账/编辑/删除过账单：清除标记即可，首页用「快照 + 乐观增量」即时渲染，
+    // 后台静默拉取云端数据校正，全程不出现整页 loading
     const homeDirty = app.globalData.homeSummaryDirty === true;
     if (homeDirty) app.globalData.homeSummaryDirty = false;
     // 首次进入展示一次"左滑删除"引导提示（本地已记住则不重复）
@@ -67,8 +68,8 @@ Page({
         this.closeSwipeGuide();
       }, 4000);
     }
-    // 1) 先用 storage 缓存立刻渲染骨架内容（hasCache 标记避免覆盖式 setData）
-    const hasCache = this.applyCachedHome({ skipIfDirty: homeDirty });
+    // 1) 先用本地快照立刻渲染（有缓存时 loading 全程为 false）
+    const hasCache = this.applyCachedHome();
     this.refreshNicknameTip();
     // 2) 新用户（无缓存且未看过欢迎页）立即弹欢迎页，不等云函数初始化
     const isNewVisitor = !hasCache && !wx.getStorageSync("hasSeenWelcome") && !wx.getStorageSync("welcomePending");
@@ -119,15 +120,9 @@ Page({
     this.setData({ showNicknameTip: false });
   },
 
-  applyCachedHome(options) {
-    const skipIfDirty = options && options.skipIfDirty === true;
+  applyCachedHome() {
     const familyId = app.globalData.currentFamilyId;
     if (!familyId) {
-      this.setData({ loading: true, errorMessage: "" });
-      return false;
-    }
-    if (skipIfDirty) {
-      // 刚记完账回首页：跳过旧缓存，直接走 loading → 拉新
       this.setData({ loading: true, errorMessage: "" });
       return false;
     }
@@ -137,26 +132,28 @@ Page({
       this.setData({ loading: true, errorMessage: "" });
       return false;
     }
-    const bills = (cached.recentBills || []).map((b) => ({ ...b, canOperate: b.canOperate === true, displayTime: (b.date || "").substring(11, 16) }));
+    // 记账/编辑/删除回来也直接用快照渲染（不再整页转圈），未同步的改动以乐观增量并入；
+    // 云端数据由 refreshHome 静默拉回后原地覆盖校正。
+    const snapshot = this.buildSnapshotWithDeltas(familyId, cached);
     this.setData({
       currentFamilyId: familyId,
       familyName: cached.familyName || app.globalData.currentFamily?.name || "",
       isOwner: cached.isOwner === true || app.globalData.currentFamily?.isOwner === true,
       familyAdminName: cached.familyAdminName || app.globalData.currentFamily?.adminName || "",
       roleReady: true,
-      todayExpense: cached.summary.todayExpense || "0.00",
-      monthExpense: cached.summary.monthExpense || "0.00",
-      monthIncome: cached.summary.monthIncome || "0.00",
-      monthBalance: cached.summary.monthBalance || "0.00",
-      budget: formatBudget(cached.summary && cached.summary.budget),
-      recentBills: bills,
-      groupedBills: this._groupRecentBills(bills),
+      todayExpense: snapshot.todayExpense,
+      monthExpense: snapshot.monthExpense,
+      monthIncome: snapshot.monthIncome,
+      monthBalance: snapshot.monthBalance,
+      budget: formatBudget(snapshot.budget),
+      recentBills: snapshot.bills,
+      groupedBills: this._groupRecentBills(snapshot.bills),
       hasCache: true,
       loading: false,
       errorMessage: ""
     });
     // 缓存有账单时也尝试展示引导
-    if (bills.length > 0 && !wx.getStorageSync("hasSeenSwipeGuide")) {
+    if (snapshot.bills.length > 0 && !wx.getStorageSync("hasSeenSwipeGuide")) {
       this.setData({ showSwipeGuide: true });
       if (this._swipeGuideTimer) clearTimeout(this._swipeGuideTimer);
       this._swipeGuideTimer = setTimeout(() => {
@@ -164,6 +161,110 @@ Page({
       }, 4000);
     }
     return true;
+  },
+
+  // 把乐观增量（记账/编辑/删除）并入首页快照，返回可直接 setData 的视图数据。
+  // 汇总口径与云函数 getHomeSummary 一致：只统计今天及更早、且落在本月的账单；
+  // 预算以缓存为基数按增量平移，剩余额度和百分比用分重算，最终一律以云端返回为准。
+  buildSnapshotWithDeltas(familyId, cached) {
+    const today = this.formatShanghaiDate(new Date());
+    const month = today.substring(0, 7);
+
+    let todayCents = Math.round(Number(cached.summary.todayExpense || 0) * 100);
+    let monthExpenseCents = Math.round(Number(cached.summary.monthExpense || 0) * 100);
+    let monthIncomeCents = Math.round(Number(cached.summary.monthIncome || 0) * 100);
+    let balanceCents = Math.round(Number(cached.summary.monthBalance || 0) * 100);
+    let deltaTodayCents = 0;
+    let deltaMonthExpenseCents = 0;
+    let deltaMonthIncomeCents = 0;
+
+    let bills = (cached.recentBills || []).map((b) => ({ ...b, canOperate: b.canOperate === true, displayTime: (b.date || "").substring(11, 16) }));
+
+    // 一笔账对汇总数字的贡献（金额单位分）；未来日期的账单不计入汇总，口径同云函数
+    const effectOf = (meta) => {
+      if (!meta || !["expense", "income"].includes(meta.type)) return null;
+      const date = String(meta.date || "");
+      const day = date.substring(0, 10);
+      if (!date || day > today) return null;
+      const inMonthAmount = date.substring(0, 7) === month ? meta.amountCents : 0;
+      return {
+        today: day === today ? meta.amountCents : 0,
+        expense: meta.type === "expense" ? inMonthAmount : 0,
+        income: meta.type === "income" ? inMonthAmount : 0
+      };
+    };
+    const shiftTotals = (effect, sign) => {
+      if (!effect) return;
+      deltaTodayCents += sign * effect.today;
+      deltaMonthExpenseCents += sign * effect.expense;
+      deltaMonthIncomeCents += sign * effect.income;
+    };
+
+    app.consumeHomeDeltas(familyId).forEach((delta) => {
+      if (!delta) return;
+      if (delta.remove && delta.remove.id) {
+        const index = bills.findIndex((bill) => bill._id === delta.remove.id);
+        let removedMeta = null;
+        if (index >= 0) {
+          const row = bills[index];
+          removedMeta = { type: row.type, amountCents: Number(row.amount || 0), date: row.date || "" };
+          bills.splice(index, 1);
+        } else if (delta.remove.type && delta.remove.amountCents !== undefined) {
+          // 被删的账单不在最近列表窗口内：退回用记账页快照的原始数据扣除
+          removedMeta = delta.remove;
+        }
+        shiftTotals(effectOf(removedMeta), -1);
+      }
+      if (delta.add) {
+        const amountCents = Math.round(Number(delta.add.amountCents || 0));
+        const date = delta.add.date || "";
+        const row = {
+          _id: delta.add.id,
+          type: delta.add.type,
+          amount: amountCents,
+          category1: delta.add.category1,
+          category1Icon: delta.add.category1Icon || "",
+          category2: delta.add.category2,
+          category2Icon: delta.add.category2Icon || "",
+          date,
+          account: delta.add.account,
+          member: delta.add.member,
+          remark: delta.add.remark || "",
+          merchant: delta.add.merchant || "",
+          canOperate: true,
+          displayAmount: (amountCents / 100).toFixed(2),
+          displayTime: date.substring(11, 16)
+        };
+        // 按日期降序插入最近列表，超出 10 条裁掉末尾
+        const insertAt = bills.findIndex((bill) => (bill.date || "") < date);
+        if (insertAt >= 0) bills.splice(insertAt, 0, row);
+        else bills.push(row);
+        if (bills.length > 10) bills = bills.slice(0, 10);
+        shiftTotals(effectOf({ type: delta.add.type, amountCents, date }), 1);
+      }
+    });
+
+    const budgetSrc = cached.summary.budget || null;
+    let budget = null;
+    if (budgetSrc) {
+      const budgetAmountCents = Math.round(Number(budgetSrc.amount) * 100);
+      const budgetExpenseCents = Math.round(Number(budgetSrc.expense) * 100) + deltaMonthExpenseCents;
+      budget = {
+        amount: budgetAmountCents / 100,
+        expense: budgetExpenseCents / 100,
+        remain: (budgetAmountCents - budgetExpenseCents) / 100,
+        percent: budgetAmountCents > 0 ? Math.round((budgetExpenseCents / budgetAmountCents) * 100) : 0
+      };
+    }
+
+    return {
+      bills,
+      todayExpense: ((todayCents + deltaTodayCents) / 100).toFixed(2),
+      monthExpense: ((monthExpenseCents + deltaMonthExpenseCents) / 100).toFixed(2),
+      monthIncome: ((monthIncomeCents + deltaMonthIncomeCents) / 100).toFixed(2),
+      monthBalance: ((balanceCents + deltaMonthIncomeCents - deltaMonthExpenseCents) / 100).toFixed(2),
+      budget
+    };
   },
 
   async refreshHome(options = {}) {
@@ -291,6 +392,8 @@ Page({
       ]);
       const bills = billResponse.result && billResponse.result.bills || [];
       const summary = summaryResponse.result || {};
+      // 云端权威数据已到手，丢弃未消费的乐观增量，避免后续渲染重复叠加
+      app.consumeHomeDeltas(currentFamilyId);
 
       const recentBills = bills
         .map(bill => ({
@@ -611,6 +714,12 @@ Page({
           self.setData({ slidBillId: "" });
           app.globalData.billsDirty = true;
           app.globalData.homeSummaryDirty = true;
+          // 若本次刷新失败，下次回首页时靠这份增量把缓存里的账单乐观扣掉
+          app.queueHomeDelta({
+            familyId: app.globalData.currentFamilyId,
+            ts: Date.now(),
+            remove: { id: billId, type: bill.type, amountCents: Number(bill.amount || 0), date: bill.date }
+          });
           wx.showToast({ title: "已删除", icon: "success" });
           self.refreshHome({ silent: true });
         } catch (error) {

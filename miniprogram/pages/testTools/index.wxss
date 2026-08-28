@@ -88,3 +88,77 @@
 .row.danger .row-go {
   color: #D64545;
 }
+
+/* 每日记账提醒调试卡片 */
+.remind-card {
+  margin-top: 24rpx;
+}
+
+.remind-actions {
+  display: flex;
+  gap: 20rpx;
+  padding: 16rpx 32rpx;
+}
+
+.remind-btn {
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  height: 72rpx;
+  line-height: 70rpx;
+  font-size: 26rpx;
+  color: #FFFFFF;
+  background: #FF8C42;
+  border-radius: 36rpx;
+}
+.remind-btn::after {
+  border: none;
+}
+.remind-btn.warn {
+  background: #D64545;
+}
+.remind-btn[disabled] {
+  opacity: 0.6;
+}
+
+.remind-skip {
+  display: flex;
+  align-items: center;
+  padding: 8rpx 32rpx 24rpx;
+}
+.remind-skip-text {
+  margin-left: 16rpx;
+  font-size: 26rpx;
+  color: #8D6E63;
+}
+
+.kv {
+  display: flex;
+  align-items: baseline;
+  padding: 18rpx 32rpx;
+  border-top: 1rpx solid #F5EBE0;
+}
+.kv-label {
+  width: 220rpx;
+  flex-shrink: 0;
+  font-size: 24rpx;
+  color: #BCAAA4;
+}
+.kv-value {
+  flex: 1;
+  font-size: 26rpx;
+  line-height: 38rpx;
+  word-break: break-all;
+  color: #5D4037;
+}
+.kv-value.ok {
+  font-weight: 600;
+  color: #FF8C42;
+}
+
+.remind-empty {
+  padding: 40rpx 32rpx;
+  border-top: 1rpx solid #F5EBE0;
+  font-size: 26rpx;
+  color: #BCAAA4;
+}

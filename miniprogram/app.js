@@ -4,7 +4,9 @@ App({
     userInfo: null,
     currentFamilyId: "",
     currentFamily: null,
-    loggedIn: false
+    loggedIn: false,
+    // 未消费的首页乐观增量（记账/编辑/删除产生的 {familyId, ts, add?, remove?}）
+    pendingHomeBills: []
   },
 
   onLaunch() {
@@ -172,6 +174,21 @@ App({
   ensureInitialized() {
     if (!this.initializePromise) this.initializePromise = this.initialize();
     return this.initializePromise;
+  },
+
+  // 首页乐观增量队列：记账成功后入队，首页渲染快照时并入，云端数据返回后废弃。
+  // 只存在于内存中，目的是消除"记完一笔返回首页的等待"，最终一律以云端为准。
+  queueHomeDelta(delta) {
+    if (delta && typeof delta === "object") this.globalData.pendingHomeBills.push(delta);
+  },
+
+  // 取走属于指定账本的增量（取走即清空）；其他账本的增量直接丢弃，
+  // 因为首页只会以当前账本身份消费，跨账本残留没有意义。
+  consumeHomeDeltas(familyId) {
+    const all = this.globalData.pendingHomeBills;
+    this.globalData.pendingHomeBills = [];
+    if (!familyId) return [];
+    return all.filter((delta) => delta && delta.familyId === familyId);
   },
 
   // 切账本统一入口：更新 globalData + 写缓存 + 清缓存 + 广播各页面

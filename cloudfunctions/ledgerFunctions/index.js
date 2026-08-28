@@ -110,7 +110,8 @@ const COLLECTIONS = [
   "budgets",
   "bill_preferences",
   "operation_logs",
-  "initialization_locks"
+  "initialization_locks",
+  "reminder_subscriptions"
 ];
 
 // 账本累计账单笔数（不限月份），用于账本卡与账本列表展示
@@ -1102,6 +1103,337 @@ const cancelAccount = async () => {
   return { success: true };
 };
 
+// ==================== 每日记账提醒（微信订阅消息） ====================
+// 平台限制：一次性订阅一条授权只能发一条消息；用户勾选“总是保持以上选择”后可静默累积额度。
+// 微信不提供剩余额度查询接口，用 grantedCount - sentCount 本地估算剩余可发条数。
+const REMINDER_TEMPLATE_ID = "-Jfjvy5CY9tEPP8Wck9XLPFu-iHWfzXRg4Us37LA058";
+const REMINDER_TEMPLATE_PAGE = "pages/index/index";
+const REMINDER_HOURS = [9, 13, 21];
+const REMINDER_GREETINGS = {
+  9: "早上好，先把昨天的账补上吧",
+  13: "中午好，上午的开支记上了吗",
+  21: "晚上好，今天还有没记的账，花一分钟补上吧"
+};
+const getReminderDocId = (openid) => getStableDocumentId("reminder-subscription", openid);
+const normalizeRemindHour = (value, fallback = 21) => {
+  const hour = Number(value);
+  return REMINDER_HOURS.includes(hour) ? hour : fallback;
+};
+const padReminderPart = (value) => String(value).padStart(2, "0");
+const getBeijingNow = () => new Date(Date.now() + 8 * 60 * 60 * 1000);
+
+// thing 字段不支持 emoji 等特殊符号，账本名截断到 10 字符
+const sanitizeThingText = (value, maxLength) => {
+  const text = String(value || "")
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{200D}]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.slice(0, maxLength) || "家庭账本";
+};
+
+// amount 字段仅接受数字+货币单位，展示样式对齐模板示例 “1000.5元”
+const formatReminderAmountYuan = (cents) => {
+  const safeCents = Math.max(0, Math.round(Number(cents) || 0));
+  const yuan = safeCents % 100 === 0 ? String(safeCents / 100) : (safeCents / 100).toFixed(2).replace(/0$/, "");
+  return yuan + "元";
+};
+
+const buildReminderMessageData = (hour, familyName, monthExpenseCents, timeText) => ({
+  thing3: { value: "今日记账提醒" },
+  thing4: { value: REMINDER_GREETINGS[hour] || "抽出一分钟记下今天的收支吧" },
+  thing9: { value: sanitizeThingText(familyName, 10) },
+  amount7: { value: formatReminderAmountYuan(monthExpenseCents) },
+  time1: { value: timeText }
+});
+
+const getReminderSummary = (doc) => ({
+  enabled: doc?.enabled === true,
+  remindHour: normalizeRemindHour(doc?.remindHour),
+  familyId: doc?.familyId || "",
+  familyName: doc?.familyName || "",
+  remaining: Math.max(0, (Number(doc?.grantedCount) || 0) - (Number(doc?.sentCount) || 0)),
+  templateId: REMINDER_TEMPLATE_ID,
+  hours: REMINDER_HOURS
+});
+
+const getReminderDoc = async (openid) => {
+  const result = await db.collection("reminder_subscriptions").doc(getReminderDocId(openid)).get().catch(() => null);
+  return result?.data || null;
+};
+
+const findActiveMembership = async (familyId, openid) => {
+  const result = await db.collection("family_members").where({ familyId, openid, status: "active" }).limit(1).get();
+  return result.data[0] || null;
+};
+
+// 校验并快照“用哪个账本推送”（账本名 + 本月支出口径），familyId 为空时跳过
+const applyReminderFamilySnapshot = async (patch, familyId, openid) => {
+  const familyIdText = String(familyId || "").trim();
+  if (!familyIdText) return;
+  if (!(await findActiveMembership(familyIdText, openid))) throw new Error("你不是该家庭成员");
+  let family = null;
+  try {
+    family = await getFamily(familyIdText);
+  } catch (error) { /* 账本查询失败时留空名称 */ }
+  patch.familyId = familyIdText;
+  patch.familyName = String((family && family.name) || "").trim().slice(0, 30);
+};
+
+const getReminderSetting = async () => {
+  await ensureCollections();
+  const doc = await getReminderDoc(getOpenid());
+  return { success: true, setting: getReminderSummary(doc) };
+};
+
+const saveReminderSetting = async (event) => {
+  const openid = getOpenid();
+  await ensureCollections();
+  const enabled = event.enabled === true;
+  const remindHour = normalizeRemindHour(event.remindHour);
+  const patch = { enabled, remindHour, updatedAt: new Date() };
+  if (!enabled) {
+    // 关闭提醒时清空额度（本地镜像不再显示剩余条数），重新开启后走新的授权
+    patch.grantedCount = 0;
+    patch.sentCount = 0;
+    patch.pausedReason = "";
+  }
+  await applyReminderFamilySnapshot(patch, event.familyId, openid);
+  const existing = await getReminderDoc(openid);
+  const ref = db.collection("reminder_subscriptions").doc(getReminderDocId(openid));
+  if (existing) await ref.update({ data: patch });
+  else await ref.set({ data: { openid, templateId: REMINDER_TEMPLATE_ID, grantedCount: 0, sentCount: 0, createdAt: new Date(), ...patch } });
+  return { success: true, setting: getReminderSummary({ ...(existing || {}), ...patch }) };
+};
+
+const reportReminderGrant = async (event) => {
+  const openid = getOpenid();
+  await ensureCollections();
+  let granted = Number(event.granted);
+  if (!Number.isInteger(granted) || granted < 1) granted = 1;
+  if (granted > 3) granted = 3; // 单次 requestSubscribeMessage 最多 3 个模板
+  const snapshotPatch = {};
+  try {
+    await applyReminderFamilySnapshot(snapshotPatch, event.familyId, openid);
+  } catch (error) { /* 授权额度上报尽力而为，账本校验失败不影响计数 */ }
+  const now = new Date();
+  const incrementPatch = { grantedCount: command.inc(granted), lastGrantedAt: now, updatedAt: now, ...snapshotPatch };
+  const existing = await getReminderDoc(openid);
+  const ref = db.collection("reminder_subscriptions").doc(getReminderDocId(openid));
+  if (existing) await ref.update({ data: incrementPatch });
+  else await ref.set({ data: { openid, templateId: REMINDER_TEMPLATE_ID, sentCount: 0, createdAt: now, enabled: false, remindHour: 21, grantedCount: granted, lastGrantedAt: now, updatedAt: now, ...snapshotPatch } });
+  return {
+    success: true,
+    setting: getReminderSummary({
+      ...(existing || {}),
+      ...incrementPatch,
+      grantedCount: (Number(existing?.grantedCount) || 0) + granted
+    })
+  };
+};
+
+// 当前月份（yyyy-MM）某账本的支出合计，金额单位为分
+const sumFamilyMonthExpenseCents = async (familyId, monthPrefix) => {
+  try {
+    const result = await db.collection("bills").aggregate()
+      .match({ familyId, type: "expense", deleted: false, date: db.RegExp({ regexp: "^" + monthPrefix }) })
+      .group({ _id: null, total: command.aggregate.sum("$amount") })
+      .end();
+    return Number(result.list?.[0]?.total) || 0;
+  } catch (error) {
+    console.warn("统计本月支出失败", familyId, error);
+    return 0;
+  }
+};
+
+// 用户本人当天是否已在任一仍有权限的账本记过账（按账单日期、中国时区）
+const hasMemberBillsOnDate = async (familyIds, openid, dateText) => {
+  for (const familyId of familyIds) {
+    const result = await db.collection("bills").where({
+      familyId,
+      memberOpenid: openid,
+      deleted: false,
+      date: db.RegExp({ regexp: "^" + dateText })
+    }).count();
+    if ((result.total || 0) > 0) return true;
+  }
+  return false;
+};
+
+// 组装一次批次的公共上下文（北京时间日期/月份前缀/消息里的时间字段）
+const buildReminderContext = (bj) => ({
+  hour: bj.getUTCHours(),
+  todayText: bj.getUTCFullYear() + "-" + padReminderPart(bj.getUTCMonth() + 1) + "-" + padReminderPart(bj.getUTCDate()),
+  monthPrefix: bj.getUTCFullYear() + "-" + padReminderPart(bj.getUTCMonth() + 1),
+  timeText: bj.getUTCFullYear() + "年" + padReminderPart(bj.getUTCMonth() + 1) + "月" + padReminderPart(bj.getUTCDate()) + "日"
+});
+
+// 43101（用户拒收或订阅额度耗尽）时暂停推送，待前端重新授权后再开启
+const pauseReminderDoc = async (docId) => {
+  await db.collection("reminder_subscriptions").doc(docId).update({
+    data: { enabled: false, pausedReason: "no_quota", updatedAt: new Date() }
+  }).catch(() => {});
+};
+
+// 单个用户的一次提醒投递：定时任务与开发者测试工具共用这条链路，保证验证口径和生产一致。
+// 返回 { sent:true,... } 或 { sent:false, skipped | error, paused }，由调用方汇总计数。
+const deliverReminderToUser = async (sub, ctx, overrides = {}) => {
+  const openid = sub.openid;
+  try {
+    const quotaRemaining = (Number(sub.grantedCount) || 0) - (Number(sub.sentCount) || 0);
+    if (overrides.bypassQuota !== true && quotaRemaining <= 0) return { sent: false, skipped: "no_quota", quotaRemaining };
+    const memberships = (await getMembershipsByOpenid(openid)).filter((item) => item.status === "active");
+    if (!memberships.length) return { sent: false, skipped: "no_membership" }; // 已退出全部账本/注销：停止推送
+    const familyIds = memberships.map((item) => item.familyId);
+    if (overrides.skipRecordedCheck !== true && await hasMemberBillsOnDate(familyIds, openid, ctx.todayText)) {
+      return { sent: false, skipped: "recorded_today" };
+    }
+    const wantedFamilyId = overrides.familyId || sub.familyId;
+    const targetMembership = memberships.find((item) => item.familyId === wantedFamilyId) || memberships[0];
+    const [family, expenseCents] = await Promise.all([
+      getFamily(targetMembership.familyId),
+      sumFamilyMonthExpenseCents(targetMembership.familyId, ctx.monthPrefix)
+    ]);
+    const messageData = buildReminderMessageData(ctx.hour, (family && family.name) || "", expenseCents, ctx.timeText);
+    await cloud.openapi.subscribeMessage.send({
+      touser: openid,
+      templateId: REMINDER_TEMPLATE_ID,
+      page: REMINDER_TEMPLATE_PAGE,
+      data: messageData
+    });
+    await db.collection("reminder_subscriptions").doc(sub._id).update({
+      data: { sentCount: command.inc(1), lastSentAt: new Date(), lastError: "", updatedAt: new Date() }
+    }).catch(() => {});
+    return { sent: true, messageData };
+  } catch (error) {
+    const errCode = String(error.errCode ?? error.code ?? "UNKNOWN");
+    return { sent: false, error: { errCode, errMsg: String(error.errMsg || error.message || error) }, paused: errCode === "43101" };
+  }
+};
+
+// 定时触发器入口：每天 09/13/21 点各跑一次，仅处理当前时段档位的用户
+const sendDailyReminders = async () => {
+  await ensureCollections();
+  const bj = getBeijingNow();
+  const ctx = buildReminderContext(bj);
+  if (!REMINDER_HOURS.includes(ctx.hour)) return { success: true, skipped: "non_slot_hour", slot: ctx.hour };
+  const subs = await db.collection("reminder_subscriptions").where({ enabled: true, remindHour: ctx.hour }).limit(1000).get();
+  let sent = 0;
+  let skippedRecorded = 0;
+  let skippedNoQuota = 0;
+  let failed = 0;
+  for (const sub of subs.data) {
+    const outcome = await deliverReminderToUser(sub, ctx);
+    if (outcome.sent) { sent += 1; continue; }
+    if (outcome.skipped === "no_quota") { skippedNoQuota += 1; continue; }
+    if (outcome.skipped === "recorded_today") { skippedRecorded += 1; continue; }
+    if (outcome.skipped === "no_membership") continue;
+    if (outcome.error) {
+      failed += 1;
+      console.warn("每日记账提醒发送失败", sub.openid, outcome.error);
+      if (outcome.paused) await pauseReminderDoc(sub._id);
+    }
+  }
+  console.log("每日记账提醒完成", { slot: ctx.hour, sent, skippedRecorded, skippedNoQuota, failed });
+  return { success: true, slot: ctx.hour, sent, skippedRecorded, skippedNoQuota, failed };
+};
+
+// ==================== 提醒调试工具（仅开发者） ====================
+// 与 feedbackFunctions 的 DEVELOPER_OPENIDS 保持同一份名单
+const REMINDER_DEBUG_DEVELOPER_OPENIDS = ["oEntM3edll4iSPXTT0RzgomZNFIM"];
+
+const requireReminderDeveloper = async () => {
+  const openid = getOpenid();
+  if (!REMINDER_DEBUG_DEVELOPER_OPENIDS.includes(openid)) throw new Error("无权限执行该操作");
+  return openid;
+};
+
+// 只读诊断：完整还原定时任务的判定过程，定位“为什么没收到/会不会发”。
+const debugReminderDiagnose = async () => {
+  const openid = await requireReminderDeveloper();
+  await ensureCollections();
+  const bj = getBeijingNow();
+  const ctx = buildReminderContext(bj);
+  const doc = await getReminderDoc(openid) || {};
+  const remaining = Math.max(0, (Number(doc.grantedCount) || 0) - (Number(doc.sentCount) || 0));
+  const memberships = (await getMembershipsByOpenid(openid)).filter((item) => item.status === "active");
+  const families = [];
+  for (const item of memberships) {
+    let family = null;
+    try { family = await getFamily(item.familyId); } catch (error) { /* 忽略 */ }
+    families.push({ familyId: item.familyId, name: (family && family.name) || "", role: item.role });
+  }
+  const recordedToday = {};
+  let anyRecordedToday = false;
+  for (const familyId of families.map((item) => item.familyId)) {
+    const bills = await db.collection("bills").where({
+      familyId, memberOpenid: openid, deleted: false, date: db.RegExp({ regexp: "^" + ctx.todayText })
+    }).count();
+    const hasBill = (bills.total || 0) > 0;
+    recordedToday[familyId] = hasBill;
+    if (hasBill) anyRecordedToday = true;
+  }
+  const target = families.find((item) => item.familyId === doc.familyId) || families[0] || null;
+  const targetExpenseCents = target ? await sumFamilyMonthExpenseCents(target.familyId, ctx.monthPrefix) : 0;
+  const diagnosticHour = normalizeRemindHour(doc.remindHour);
+  const messagePreview = buildReminderMessageData(diagnosticHour, target ? target.name : "", targetExpenseCents, ctx.timeText);
+  const blockReasons = [];
+  if (doc.enabled !== true) blockReasons.push("提醒开关未开启");
+  if (remaining <= 0) blockReasons.push("剩余推送额度为 0（需在前端重新授权续订）");
+  if (!families.length) blockReasons.push("当前无任何有效账本成员身份");
+  if (anyRecordedToday) blockReasons.push("本人今天已有记账，按规则跳过");
+  if (!REMINDER_HOURS.includes(ctx.hour)) blockReasons.push("当前时刻不在提醒档位内（" + ctx.hour + " 点）");
+  return {
+    success: true,
+    debug: {
+      openid,
+      beijingTimeText: ctx.todayText + " " + padReminderPart(bj.getUTCHours()) + ":" + padReminderPart(bj.getUTCMinutes()),
+      setting: {
+        enabled: doc.enabled === true,
+        remindHour: diagnosticHour,
+        grantedCount: Number(doc.grantedCount) || 0,
+        sentCount: Number(doc.sentCount) || 0,
+        remaining,
+        pausedReason: doc.pausedReason || "",
+        lastSentAt: doc.lastSentAt || null,
+        lastError: doc.lastError || ""
+      },
+      templateId: REMINDER_TEMPLATE_ID,
+      families,
+      recordedToday,
+      anyRecordedToday,
+      targetFamilyName: target ? target.name : "",
+      monthExpensePreview: formatReminderAmountYuan(targetExpenseCents),
+      messagePreview,
+      blockReasons,
+      wouldSendIfSlotNow: blockReasons.length === 0
+    }
+  };
+};
+
+// 强制真实发送：绕过时段与（可选）跳过已记账判断，其余链路与定时任务完全一致，
+// 用于不等到整点就真实验证模板参数、云调用权限和服务通知到达情况。成功同样扣减额度。
+const debugReminderForceSend = async (event) => {
+  const openid = await requireReminderDeveloper();
+  await ensureCollections();
+  const doc = await getReminderDoc(openid) || {};
+  const ctx = buildReminderContext(getBeijingNow());
+  ctx.hour = normalizeRemindHour(doc.remindHour); // 问候语按用户所选档位展示
+  const sub = {
+    _id: getReminderDocId(openid),
+    openid,
+    familyId: doc.familyId || "",
+    grantedCount: Number(doc.grantedCount) || 0,
+    sentCount: Number(doc.sentCount) || 0
+  };
+  const outcome = await deliverReminderToUser(sub, ctx, {
+    bypassQuota: true,
+    skipRecordedCheck: event.skipRecordedCheck === true
+  });
+  if (outcome.paused) await pauseReminderDoc(sub._id);
+  const fresh = await getReminderDoc(openid);
+  return { success: true, outcome, setting: getReminderSummary(fresh), skipRecordedCheck: event.skipRecordedCheck === true };
+};
+
 const main = async (event) => {
   await ensureCollections();
   switch (event.action || event.type) {
@@ -1129,6 +1461,11 @@ const main = async (event) => {
     case "restoreFamily": return await restoreFamily(event);
     case "purgeExpiredFamilies": return await purgeExpiredFamilies();
     case "cancelAccount": return await cancelAccount();
+    case "getReminderSetting": return await getReminderSetting();
+    case "saveReminderSetting": return await saveReminderSetting(event);
+    case "reportReminderGrant": return await reportReminderGrant(event);
+    case "debugReminderDiagnose": return await debugReminderDiagnose();
+    case "debugReminderForceSend": return await debugReminderForceSend(event);
     default: return fail("未知操作", "UNKNOWN_ACTION");
   }
 };
@@ -1136,6 +1473,7 @@ const main = async (event) => {
 exports.main = async (event) => {
   try {
     if (event && event.TriggerName && !event.action && !event.type) {
+      if (event.TriggerName === "dailyReminder") return await sendDailyReminders();
       let action = "purgeExpiredFamilies";
       try {
         if (event.Message) {

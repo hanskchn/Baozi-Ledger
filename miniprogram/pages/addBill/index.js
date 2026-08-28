@@ -1,4 +1,5 @@
 const app = getApp();
+const dailyReminder = require("../../utils/dailyReminder.js");
 
 Page({
   data: {
@@ -65,6 +66,8 @@ Page({
         const detail = await this.callFunction("getBill", { familyId, billId: options.billId });
         const bill = detail.bill;
         if (!bill.canOperate) throw new Error("你没有编辑这笔账单的权限");
+        // 快照原始金额/类型/日期，返回首页时用于乐观扣除旧值
+        this._editOriginal = { type: bill.type, amountCents: Number(bill.amount || 0), date: bill.date };
         this.setData({
           billId: bill._id,
           billVersion: bill.version,
@@ -446,6 +449,27 @@ Page({
     });
   },
 
+  // 打包当前表单为首页乐观增量使用的账单数据（字段与 bills 文档保持一致）。
+  // 优先用云端返回的真实账单 id，保证云端数据刷回前点击这行去编辑/删除也有效；
+  // 拿不到时退回本地伪 id，仅用于展示（此时应等刷新完成后才可操作该行）。
+  buildPendingBill(billId) {
+    return {
+      id: billId || "local_" + Date.now() + Math.random().toString(36).slice(2, 6),
+      type: this.data.type,
+      amountCents: Math.round(Number(this.data.amount) * 100),
+      category1: this.data.category1,
+      category1Icon: this.data.category1Icon,
+      category2: this.data.category2,
+      category2Icon: this.data.category2Icon,
+      date: this.data.date,
+      account: this.data.account,
+      memberId: this.data.memberId,
+      member: this.data.memberName,
+      remark: this.data.remark,
+      merchant: this.data.merchant
+    };
+  },
+
   async saveBill() {
     if (this.data.saving) return;
     const amount = String(this.data.amount).trim();
@@ -471,14 +495,22 @@ Page({
         remark: this.data.remark,
         merchant: this.data.merchant
       };
+      let savedResult = null;
       if (this.data.editMode) {
-        await this.callFunction("updateBill", { ...billData, billId: this.data.billId, version: this.data.billVersion });
+        savedResult = await this.callFunction("updateBill", { ...billData, billId: this.data.billId, version: this.data.billVersion });
       } else {
-        await this.callFunction("createBill", billData);
+        savedResult = await this.callFunction("createBill", billData);
       }
-      // 通知账单/统计页跳过缓存、强制刷新一次；同时通知首页摘要跳过缓存
+      // 通知账单/统计页跳过缓存、强制刷新一次；首页改走「快照 + 乐观增量」即时渲染
       app.globalData.billsDirty = true;
       app.globalData.homeSummaryDirty = true;
+      app.queueHomeDelta({
+        familyId: this.data.familyId,
+        ts: Date.now(),
+        // 编辑 = 扣除旧账（_editOriginal 缺失时由首页按列表命中行扣除）+ 计入新账
+        remove: this.data.editMode ? { id: this.data.billId, ...(this._editOriginal || {}) } : undefined,
+        add: this.buildPendingBill((savedResult && savedResult.billId) || (this.data.editMode ? this.data.billId : ""))
+      });
       // 立刻更新本地选项缓存，下次打开记账页直接显示最新选择，不会闪旧数据
       this.updateLocalCacheAfterSave();
       // 偏好保存挪到后台，不阻塞用户感知的返回/toast
@@ -495,6 +527,8 @@ Page({
         cancelText: "返回首页",
         confirmText: "再记一笔",
         success: (modal) => {
+          // 续订放在弹窗点击回调里：贴近用户手势发起订阅授权（fire-and-forget，内部有冷却控制）
+          dailyReminder.afterBillSaved();
           if (!modal.confirm) {
             wx.navigateBack();
             return;
@@ -526,6 +560,12 @@ Page({
           });
           app.globalData.billsDirty = true;
           app.globalData.homeSummaryDirty = true;
+          // 首页乐观扣除这笔被删的账单（_editOriginal 在编辑模式加载时已快照）
+          app.queueHomeDelta({
+            familyId: this.data.familyId,
+            ts: Date.now(),
+            remove: { id: this.data.billId, ...(this._editOriginal || {}) }
+          });
           wx.showToast({ title: "已删除", icon: "success" });
           setTimeout(() => wx.navigateBack(), 400);
         } catch (error) {

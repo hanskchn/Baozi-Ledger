@@ -20,6 +20,12 @@
       <text class="menu-text">编辑资料</text>
       <text class="menu-arrow">›</text>
     </view>
+    <view class="menu-item" bindtap="openReminderSheet">
+      <text class="menu-icon">🔔</text>
+      <text class="menu-text">每日记账提醒</text>
+      <text class="menu-value {{reminder.enabled && reminder.remaining <= 2 ? 'warn' : ''}}">{{reminderValueText}}</text>
+      <text class="menu-arrow">›</text>
+    </view>
     <view class="menu-item" bindtap="goFamily">
       <text class="menu-icon">👥</text>
       <text class="menu-text">家庭管理</text>
@@ -102,5 +108,83 @@
     </view>
     <button class="profile-save-btn" bindtap="saveProfile" loading="{{savingProfile}}" disabled="{{savingProfile}}">保存</button>
   </view>
+
+  <!-- 每日记账提醒 底部弹层 -->
+  <view class="profile-mask" wx:if="{{showReminderSheet}}" bindtap="closeReminderSheet" catchtouchmove="noop"></view>
+  <view class="profile-sheet" wx:if="{{showReminderSheet}}" catchtouchmove="noop">
+    <view class="profile-sheet-handle"></view>
+    <text class="profile-sheet-title">每日记账提醒</text>
+
+    <view class="reminder-row">
+      <view class="reminder-row-main">
+        <text class="reminder-row-title">开启提醒</text>
+        <text class="reminder-row-desc">到点通过微信「服务通知」提醒你记账</text>
+      </view>
+      <switch checked="{{reminder.enabled}}" color="#FF8C42" disabled="{{reminderSaving}}" bindchange="onReminderToggle" />
+    </view>
+
+    <text class="reminder-section">提醒时间</text>
+    <view
+      wx:for="{{reminderOptions}}"
+      wx:key="hour"
+      class="reminder-option {{reminder.remindHour === item.hour ? 'active' : ''}}"
+      bindtap="pickRemindHour"
+      data-hour="{{item.hour}}"
+    >
+      <view class="reminder-option-main">
+        <text class="reminder-option-label">{{item.label}}</text>
+        <text class="reminder-option-desc">{{item.desc}}</text>
+      </view>
+      <text wx:if="{{reminder.remindHour === item.hour}}" class="reminder-option-check">✓</text>
+    </view>
+
+    <view class="reminder-quota" wx:if="{{showQuota}}">
+      <text wx:if="{{renewBlocked}}" class="reminder-quota-text warn">无法自动补足，请前往「设置」重新允许</text>
+      <text wx:else class="reminder-quota-text">{{reminderQuotaText}}</text>
+      <button
+        wx:if="{{!renewBlocked}}"
+        class="reminder-topup-btn"
+        size="mini"
+        disabled="{{reminderSaving}}"
+        bindtap="manualTopup"
+      >补一条</button>
+      <text wx:if="{{renewBlocked}}" class="reminder-renew-link" catchtap="openReminderSettings">去设置重新允许</text>
+    </view>
+
+    <text class="reminder-tip">首次授权请勾选「总是保持以上选择」，之后打开小程序会自动为您补足推送额度，无需手动续订。</text>
+  </view>
+
+  <!-- 开启提醒 · 瑞幸式底部授权说明 -->
+  <view class="profile-mask" wx:if="{{showReminderGuide}}" bindtap="closeReminderGuide" catchtouchmove="noop"></view>
+  <view class="guide-sheet" wx:if="{{showReminderGuide}}" catchtouchmove="noop">
+    <view class="profile-sheet-handle"></view>
+    <text class="guide-title">开启每日记账提醒</text>
+    <text class="guide-subtitle">通过微信「服务通知」定时提醒，不再错过记账</text>
+
+    <view class="guide-time">
+      <text class="guide-time-label">提醒时间</text>
+      <text class="guide-time-value">每天 {{guideReminderTimeText}}</text>
+    </view>
+
+    <view class="guide-points">
+      <view class="guide-point">
+        <text class="guide-point-title">1 · 会弹一次窗</text>
+        <text class="guide-point-desc">点击下方按钮后将弹出一次微信授权确认（仅首次）：点「允许」并勾选「总是保持以上选择」即可</text>
+      </view>
+      <view class="guide-point">
+        <text class="guide-point-title">2 · 自动补足</text>
+        <text class="guide-point-desc">勾选后每次打开小程序会自动补足额度，全程无感、不再弹窗</text>
+      </view>
+      <view class="guide-point">
+        <text class="guide-point-title">3 · 随时可关</text>
+        <text class="guide-point-desc">想暂停时在「我的 → 每日记账提醒」一键关闭即可</text>
+      </view>
+    </view>
+
+    <button class="guide-confirm-btn" bindtap="confirmReminderGuide" disabled="{{reminderSaving}}">同意并开启</button>
+    <button class="guide-cancel-btn" bindtap="closeReminderGuide">暂不开启</button>
+  </view>
+
+
 <privacy-popup />
 </view>

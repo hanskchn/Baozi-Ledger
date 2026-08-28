@@ -18,7 +18,8 @@ const ALL_COLLECTIONS = [
   "bill_preferences",
   "operation_logs",
   "initialization_locks",
-  "feedbacks"
+  "feedbacks",
+  "reminder_subscriptions"
 ];
 
 const CLEAR_PARALLEL = 5;

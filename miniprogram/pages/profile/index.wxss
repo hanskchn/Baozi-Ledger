@@ -223,3 +223,201 @@
   border-radius: 16rpx;
   text-align: center;
 }
+
+.menu-value {
+  margin-right: 8rpx;
+  font-size: 26rpx;
+  color: #BCAAA4;
+}
+.menu-value.warn {
+  color: #D96A23;
+}
+
+/* 每日记账提醒弹层 */
+.reminder-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid #F5EBE0;
+}
+.reminder-row-main {
+  display: flex;
+  flex-direction: column;
+  margin-right: 24rpx;
+}
+.reminder-row-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #5D4037;
+}
+.reminder-row-desc {
+  margin-top: 6rpx;
+  font-size: 24rpx;
+  color: #8D6E63;
+}
+.reminder-section {
+  display: block;
+  margin: 28rpx 0 16rpx;
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #5D4037;
+}
+.reminder-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20rpx 24rpx;
+  margin-bottom: 16rpx;
+  background: #FFF8EC;
+  border: 2rpx solid transparent;
+  border-radius: 16rpx;
+}
+.reminder-option.active {
+  border-color: #FF8C42;
+  background: #FFF3E6;
+}
+.reminder-option-main {
+  display: flex;
+  align-items: baseline;
+}
+.reminder-option-label {
+  width: 110rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #5D4037;
+}
+.reminder-option-desc {
+  font-size: 24rpx;
+  color: #8D6E63;
+}
+.reminder-option-check {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #FF8C42;
+}
+.reminder-quota {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8rpx 4rpx 0;
+}
+.reminder-quota-text {
+  font-size: 24rpx;
+  color: #8D6E63;
+}
+.reminder-quota-text.warn {
+  color: #D64545;
+}
+.reminder-renew-link {
+  padding: 4rpx 20rpx;
+  font-size: 24rpx;
+  color: #FF8C42;
+  background: #FFF3E8;
+  border-radius: 24rpx;
+}
+.reminder-topup-btn {
+  margin: 0;
+  padding: 0 24rpx;
+  height: 52rpx;
+  line-height: 50rpx;
+  font-size: 24rpx;
+  color: #FFFFFF;
+  background: #FF8C42;
+  border-radius: 26rpx;
+}
+.reminder-topup-btn::after {
+  border: none;
+}
+.reminder-tip {
+  display: block;
+  margin-top: 28rpx;
+  font-size: 22rpx;
+  line-height: 34rpx;
+  color: #BCAAA4;
+}
+
+/* 开启提醒 · 瑞幸式底部授权说明 */
+.guide-sheet {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 302;
+  padding: 24rpx 48rpx calc(40rpx + env(safe-area-inset-bottom));
+  background: #FFFFFF;
+  border-radius: 40rpx 40rpx 0 0;
+  box-shadow: 0 -8rpx 40rpx rgba(93, 64, 55, 0.18);
+}
+.guide-title {
+  display: block;
+  text-align: center;
+  font-size: 36rpx;
+  font-weight: 700;
+  color: #3E2723;
+}
+.guide-subtitle {
+  display: block;
+  margin-top: 8rpx;
+  text-align: center;
+  font-size: 24rpx;
+  color: #8D6E63;
+}
+.guide-time {
+  margin: 36rpx 0 28rpx;
+  padding: 24rpx 28rpx;
+  background: #FFF8F3;
+  border-radius: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.guide-time-label {
+  font-size: 26rpx;
+  color: #8D6E63;
+}
+.guide-time-value {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #FF8C42;
+}
+.guide-points {
+  margin-bottom: 36rpx;
+}
+.guide-point {
+  display: flex;
+  padding: 10rpx 0;
+}
+.guide-point-title {
+  width: 200rpx;
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #5D4037;
+}
+.guide-point-desc {
+  flex: 1;
+  font-size: 24rpx;
+  line-height: 36rpx;
+  color: #8D6E63;
+}
+.guide-confirm-btn {
+  margin-bottom: 16rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+  font-size: 32rpx;
+  color: #FFFFFF;
+  background: linear-gradient(135deg, #FFB36B, #FF8C42);
+  border-radius: 44rpx;
+}
+.guide-confirm-btn::after {
+  border: none;
+}
+.guide-cancel-btn {
+  margin: 0;
+  background: transparent;
+  height: 72rpx;
+  line-height: 72rpx;
+  font-size: 28rpx;
+  color: #8D6E63;
+}
+.guide-cancel-btn::after {
+  border: none;
+}

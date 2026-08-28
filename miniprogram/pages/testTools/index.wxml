@@ -17,5 +17,30 @@
       </view>
     </view>
   </view>
+
+  <!-- 每日记账提醒 调试 -->
+  <view class="card remind-card">
+    <view class="card-head">
+      <text class="card-title">每日记账提醒</text>
+      <text class="refresh" bindtap="loadReminderDebug">↻ 刷新诊断</text>
+    </view>
+
+    <view class="remind-actions">
+      <button class="remind-btn" bindtap="requestReminderAuth" disabled="{{reminderBusy}}">补充一条推送额度</button>
+      <button class="remind-btn warn" bindtap="sendTestReminder">立即发测试消息</button>
+    </view>
+    <view class="remind-skip">
+      <switch checked="{{skipRecordedCheck}}" color="#FF8C42" bindchange="onToggleSkipRecorded" />
+      <text class="remind-skip-text">跳过「今日已记账」判断</text>
+    </view>
+
+    <block wx:if="{{reminderDebug}}">
+      <view wx:for="{{reminderDebug}}" wx:key="index" class="kv">
+        <text class="kv-label">{{item.label}}</text>
+        <text class="kv-value {{item.ok ? 'ok' : ''}}">{{item.value}}</text>
+      </view>
+    </block>
+    <view wx:else class="remind-empty" bindtap="loadReminderDebug">点击「刷新诊断」查看当前状态与是否将发送的判定</view>
+  </view>
   <privacy-popup />
 </view>

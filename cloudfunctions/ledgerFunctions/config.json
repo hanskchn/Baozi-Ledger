@@ -1,6 +1,6 @@
 {
   "permissions": {
-    "openapi": ["wxacode.getUnlimited"]
+    "openapi": ["wxacode.getUnlimited", "subscribeMessage.send"]
   },
   "timeout": 60,
   "triggers": [
@@ -8,6 +8,11 @@
       "name": "dailyPurge",
       "type": "timer",
       "config": "0 0 3 * * * *"
+    },
+    {
+      "name": "dailyReminder",
+      "type": "timer",
+      "config": "0 0 9,13,21 * * * *"
     }
   ]
 }

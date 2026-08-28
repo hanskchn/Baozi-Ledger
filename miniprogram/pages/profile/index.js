@@ -1,4 +1,5 @@
 const app = getApp();
+const dailyReminder = require("../../utils/dailyReminder.js");
 
 Page({
   data: {
@@ -13,7 +14,19 @@ Page({
     savingProfile: false,
     sheetAvatarUrl: "",
     isDeveloper: false,
-    unreadCount: 0
+    unreadCount: 0,
+    reminder: { enabled: false, remindHour: 21, remaining: 0, loaded: false },
+    reminderValueText: "未开启",
+    showReminderSheet: false,
+    showReminderGuide: false,
+    guideReminderTimeText: "",
+    reminderQuotaText: "",
+    reminderSaving: false,
+    reminderOptions: [
+      { hour: 9, label: "09:00", desc: "早上 · 通勤路上补昨天的账" },
+      { hour: 13, label: "13:00", desc: "午间 · 记下上午的花销" },
+      { hour: 21, label: "21:00", desc: "睡前 · 盘点今天全天的收支" }
+    ]
   },
 
   async onShow() {
@@ -36,6 +49,7 @@ Page({
       wx.showToast({ title: error.message || "加载失败", icon: "none" });
     }
     this.refreshFeedbackState();
+    this.refreshReminderState();
   },
 
   async callFeedback(action, data = {}) {
@@ -177,6 +191,190 @@ Page({
   goLogs() {
     wx.navigateTo({ url: "/pages/logs/index" });
   },
+
+  // ==================== 每日记账提醒 ====================
+
+  buildReminderValueText(reminder) {
+    if (!reminder.enabled) return "未开启";
+    const option = this.data.reminderOptions.find((item) => item.hour === reminder.remindHour);
+    let text = "每天 " + (option ? option.label : "21:00");
+    if (reminder.renewBlocked) text += " · 请重新允许";
+    return text;
+  },
+
+  reminderTimeText(hour) {
+    const option = this.data.reminderOptions.find((item) => item.hour === hour);
+    return option ? option.label : "21:00";
+  },
+
+  applyReminder(reminder, setting) {
+    const next = { ...this.data.reminder, ...reminder };
+    const cache = dailyReminder.getCache();
+    const blocked = next.renewBlocked === true || (cache && cache.renewBlocked === true);
+    const remaining = Number(next.remaining) || 0;
+    // 仅当额度不足（≤ 5）或已被永久拒收时才需要展示“补一条 / 重新允许”；额度足够时不显示，保持清爽
+    const showQuota = next.enabled === true && (blocked || remaining <= 5);
+    this.setData({
+      reminder: next,
+      reminderValueText: this.buildReminderValueText({ ...next, renewBlocked: blocked }),
+      reminderQuotaText: blocked ? "" : `剩余 ${remaining} 条提醒额度`,
+      showQuota,
+      renewBlocked: blocked
+    });
+    if (setting) dailyReminder.syncCacheFromSetting(setting);
+  },
+
+  async refreshReminderState() {
+    try {
+      const response = await this.callLedger("getReminderSetting");
+      const setting = response.setting || {};
+      const cache = dailyReminder.getCache() || {};
+      this.applyReminder({
+        ...setting,
+        loaded: true,
+        renewBlocked: cache.renewBlocked === true
+      }, setting);
+    } catch (error) {
+      console.warn("获取提醒设置失败", error);
+    }
+  },
+
+  openReminderSheet() {
+    this.setData({ showReminderSheet: true });
+  },
+
+  closeReminderSheet() {
+    if (this.data.reminderSaving) return;
+    this.setData({ showReminderSheet: false });
+  },
+
+  // —— 开启提醒：瑞幸式底部授权说明 ——
+  openReminderGuide() {
+    this.setData({
+      showReminderGuide: true,
+      guideReminderTimeText: this.reminderTimeText(this.data.reminder.remindHour)
+    });
+  },
+
+  closeReminderGuide() {
+    this.setData({ showReminderGuide: false });
+    // 用户未开启时保证开关归位
+    if (!this.data.reminder.enabled) this.applyReminder({ enabled: false });
+  },
+
+  async confirmReminderGuide() {
+    if (this.data.reminderSaving) return;
+    this.setData({ showReminderGuide: false, reminderSaving: true });
+    try {
+      // 「同意并开启」= 唯一订阅意向：首次授权（微信必须弹一次系统窗）。
+      // 之后不再批量补；额度靠“记账后 / 打开小程序时”由本人自动静默补（见 dailyReminder.autoRenewIfNeeded）。
+      const result = await dailyReminder.requestSubscribe();
+      if (result.granted < 1) {
+        wx.showToast({ title: this.describeSubscribeRefusal(result.raw), icon: "none" });
+        this.applyReminder({ enabled: false });
+        return;
+      }
+      await this.persistReminder({ enabled: true });
+      wx.showToast({ title: "已开启提醒，以后自动补足", icon: "success" });
+    } catch (error) {
+      wx.showToast({ title: error.message || "开启失败", icon: "none" });
+      this.applyReminder({ enabled: false });
+    } finally {
+      this.setData({ reminderSaving: false });
+    }
+  },
+
+  describeSubscribeRefusal(raw) {
+    if (raw === "ban") return "订阅已被关闭，请在小程序「设置」中重新允许订阅消息";
+    return "未完成订阅授权，提醒暂时无法生效";
+  },
+
+  onReminderToggle(event) {
+    if (event.detail.value === true) this.openReminderGuide();
+    else this.disableReminder();
+  },
+
+  async disableReminder() {
+    if (this.data.reminderSaving) return;
+    const modal = await new Promise((resolve) => wx.showModal({
+      title: "关闭提醒",
+      content: "关闭后将不再推送记账提醒，已预留的推送额度也会清零。确认关闭？",
+      confirmText: "关闭",
+      confirmColor: "#D64545",
+      success: resolve
+    }));
+    if (!modal.confirm) return;
+    this.setData({ reminderSaving: true });
+    try {
+      await this.persistReminder({ enabled: false });
+      wx.showToast({ title: "已关闭提醒", icon: "success" });
+    } catch (error) {
+      wx.showToast({ title: error.message || "关闭失败", icon: "none" });
+      this.applyReminder({ enabled: true });
+    } finally {
+      this.setData({ reminderSaving: false });
+    }
+  },
+
+  async persistReminder(patch) {
+    const response = await this.callLedger("saveReminderSetting", {
+      ...patch,
+      remindHour: this.data.reminder.remindHour,
+      familyId: app.globalData.currentFamilyId || ""
+    });
+    const setting = response.setting || {};
+    this.applyReminder({
+      ...patch,
+      remindHour: Number(setting.remindHour) || 21,
+      remaining: Number(setting.remaining) || 0,
+      loaded: true
+    }, setting);
+    return setting;
+  },
+
+  pickRemindHour(event) {
+    const hour = Number(event.currentTarget.dataset.hour);
+    if (!hour || hour === this.data.reminder.remindHour) return;
+    this.applyReminder({ remindHour: hour });
+    if (!this.data.reminder.enabled) return;
+    this.persistReminder({ enabled: true })
+      .then(() => wx.showToast({ title: "已保存", icon: "success" }))
+      .catch((error) => {
+      wx.showToast({ title: error.message || "保存失败", icon: "none" });
+      this.refreshReminderState();
+    });
+  },
+
+  // 打开小程序订阅消息设置（withSubscriptions 直达订阅消息一栏）
+  openReminderSettings() {
+    wx.openSetting({
+      withSubscriptions: true,
+      success: () => this.refreshReminderState()
+    });
+  },
+
+  // 手动补一条额度：用户主动点击（bindtap，合法手势），请求订阅消息 +1
+  async manualTopup() {
+    if (this.data.reminderSaving) return;
+    this.setData({ reminderSaving: true });
+    try {
+      const result = await dailyReminder.requestSubscribe();
+      if (result.granted >= 1) {
+        wx.showToast({ title: "已补一条额度", icon: "success" });
+      } else {
+        const tip = result.raw === "ban"
+          ? "订阅已被关闭，请在下方「去设置重新允许」开启"
+          : "未完成授权，暂时无法补足额度";
+        wx.showToast({ title: tip, icon: "none" });
+      }
+      await this.refreshReminderState();
+    } catch (error) {
+      wx.showToast({ title: error.message || "补额度失败", icon: "none" });
+    } finally {
+      this.setData({ reminderSaving: false });
+    }
+  },
+
 
   async callLedger(action, data = {}) {
     const response = await wx.cloud.callFunction({ name: "ledgerFunctions", data: { ...data, action } });
