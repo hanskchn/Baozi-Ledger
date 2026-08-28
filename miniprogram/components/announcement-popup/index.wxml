@@ -1,0 +1,12 @@
+<view wx:if="{{show}}" class="announce-mask" catchtouchmove="noop">
+  <view class="announce-card">
+    <view class="announce-icon">⏰</view>
+    <text class="announce-title">每日记账提醒上线</text>
+    <text class="announce-desc">现在可以设置每天定时提醒记账（09:00 / 13:00 / 21:00 可选），到点微信会推送消息提醒你，再也不怕漏记啦。</text>
+    <text class="announce-tip">在「我的」页 →「每日记账提醒」开启并选择时间</text>
+    <view class="announce-actions">
+      <button class="announce-btn secondary" bindtap="handleClose">我知道了</button>
+      <button class="announce-btn primary" bindtap="handleEnable">去开启提醒</button>
+    </view>
+  </view>
+</view>

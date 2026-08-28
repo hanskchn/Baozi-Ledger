@@ -183,4 +183,5 @@
     <button class="invite-btn-secondary" bindtap="declinePendingInvite">暂不加入</button>
   </view>
 <privacy-popup />
+<announcement-popup />
 </view>

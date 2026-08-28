@@ -5,6 +5,10 @@ App({
     currentFamilyId: "",
     currentFamily: null,
     loggedIn: false,
+    // 隐私授权弹窗是否正在展示（决定后续弹窗是否避让）
+    privacyPopupOpen: false,
+    // 欢迎页是否正在展示（公告须排在欢迎页之后）
+    welcomeActive: false,
     // 未消费的首页乐观增量（记账/编辑/删除产生的 {familyId, ts, add?, remove?}）
     pendingHomeBills: []
   },
@@ -12,6 +16,7 @@ App({
   onLaunch() {
     this._sessionDeclinedCodes = new Set();
     this._privacyPopups = [];
+    this._announcementPopups = [];
     this.privacyAuthorizationResolve = null;
     if (wx.onNeedPrivacyAuthorization) {
       wx.onNeedPrivacyAuthorization((resolve) => {
@@ -73,6 +78,14 @@ App({
     if (!this._privacyPopups.includes(popup)) this._privacyPopups.push(popup);
   },
 
+  setPrivacyPopupOpen(isOpen) {
+    this.globalData.privacyPopupOpen = isOpen === true;
+  },
+
+  setWelcomeActive(isActive) {
+    this.globalData.welcomeActive = isActive === true;
+  },
+
   unregisterPrivacyPopup(popup) {
     this._privacyPopups = this._privacyPopups.filter((item) => item !== popup);
   },
@@ -82,6 +95,45 @@ App({
     this.privacyAuthorizationResolve = null;
     this._privacyPopups.forEach((popup) => popup.close());
     if (resolve) resolve(result);
+    // 隐私流程结束后再调度新功能公告，避免首启时两个遮罩叠在一起
+    this.pumpAnnouncements();
+  },
+
+  // ==================== 新功能上线一次性通知 ====================
+  // 每个新功能换一个新 key（形如 announcementSeen<功能名>V<n>），
+  // 看过一次后写入 true，之后重新打开小程序不再弹出。
+  shouldShowAnnouncement() {
+    try {
+      return wx.getStorageSync("announcementSeenDailyReminderV1") !== true;
+    } catch (error) {
+      return false;
+    }
+  },
+
+  markAnnouncementSeen() {
+    try {
+      wx.setStorageSync("announcementSeenDailyReminderV1", true);
+    } catch (error) {
+      // 存储异常不影响主流程
+    }
+  },
+
+  pumpAnnouncements() {
+    this._announcementPopups.forEach((popup) => {
+      try {
+        popup.openIfNeeded();
+      } catch (error) {
+        console.warn("公告弹窗打开失败", error);
+      }
+    });
+  },
+
+  registerAnnouncementPopup(popup) {
+    if (!this._announcementPopups.includes(popup)) this._announcementPopups.push(popup);
+  },
+
+  unregisterAnnouncementPopup(popup) {
+    this._announcementPopups = this._announcementPopups.filter((item) => item !== popup);
   },
 
   clearSession() {
@@ -108,6 +160,8 @@ App({
       // 重新初始化以处理新邀请，页面 onShow 中的 ensureInitialized 会复用该流程
       this.initializePromise = null;
     }
+    // 后台重新打开小程序时调度新功能公告（冷启动由组件 attached 兜底）
+    this.pumpAnnouncements();
   },
 
   extractInviteCode(options) {

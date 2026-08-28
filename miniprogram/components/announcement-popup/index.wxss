@@ -1,0 +1,83 @@
+.announce-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 48rpx;
+  background: rgba(62, 39, 35, 0.52);
+}
+.announce-card {
+  width: 100%;
+  padding: 56rpx 40rpx 36rpx;
+  border-radius: 28rpx;
+  background: #ffffff;
+  text-align: center;
+  box-shadow: 0 16rpx 48rpx rgba(93, 64, 55, 0.2);
+}
+.announce-icon {
+  position: relative;
+  width: 120rpx;
+  height: 120rpx;
+  margin: 0 auto 24rpx;
+  border-radius: 50%;
+  background: #fff0e0;
+  font-size: 64rpx;
+  line-height: 120rpx;
+  text-align: center;
+}
+.announce-title {
+  display: block;
+  color: #5d4037;
+  font-size: 36rpx;
+  font-weight: 600;
+}
+.announce-desc {
+  display: block;
+  margin-top: 20rpx;
+  color: #8d6e63;
+  font-size: 27rpx;
+  line-height: 1.7;
+  text-align: left;
+}
+.announce-tip {
+  display: block;
+  margin-top: 16rpx;
+  padding: 14rpx 20rpx;
+  border-radius: 12rpx;
+  background: #fff8ec;
+  color: #b0845f;
+  font-size: 24rpx;
+  line-height: 1.6;
+  text-align: left;
+}
+.announce-actions {
+  display: flex;
+  margin-top: 36rpx;
+}
+.announce-btn {
+  flex: 1;
+  height: 84rpx;
+  line-height: 84rpx;
+  border-radius: 42rpx;
+  font-size: 28rpx;
+  margin: 0;
+  padding: 0;
+}
+.announce-btn::after {
+  border: none;
+}
+.announce-btn.secondary {
+  margin-right: 20rpx;
+  background: #f5ebe0;
+  color: #8d6e63;
+}
+.announce-btn.primary {
+  background: #ff8c42;
+  color: #ffffff;
+  font-weight: 600;
+}

@@ -75,6 +75,7 @@ Page({
     const isNewVisitor = !hasCache && !wx.getStorageSync("hasSeenWelcome") && !wx.getStorageSync("welcomePending");
     if (isNewVisitor) {
       this.setData({ showWelcome: true });
+      if (app.setWelcomeActive) app.setWelcomeActive(true);
     }
     // 3) 后台刷新：欢迎页展示中或有缓存时不显示 loading
     this.refreshHome({ silent: hasCache || isNewVisitor });
@@ -284,11 +285,13 @@ Page({
       // 邀请链接进入：关掉欢迎页，显示邀请确认弹层
       if (initialized.pendingInvite) {
         this.setData({ showWelcome: false, pendingInvite: initialized.pendingInvite });
+        if (app.setWelcomeActive) app.setWelcomeActive(false);
         return;
       }
       this.setData({ pendingInvite: null });
       if (wx.getStorageSync("welcomePending") && !wx.getStorageSync("hasSeenWelcome") && !this.data.showWelcome) {
         this.setData({ showWelcome: true });
+        if (app.setWelcomeActive) app.setWelcomeActive(true);
       }
       await Promise.all([this.loadFamilyInfo(), this.loadHomeData()]);
       // 后台预加载记账页分类/账户/成员数据，点"+"时秒开
@@ -576,6 +579,7 @@ Page({
         wx.hideLoading();
         if (result && result.pendingInvite) {
           this.setData({ showWelcome: false, pendingInvite: result.pendingInvite });
+          if (app.setWelcomeActive) app.setWelcomeActive(false);
           return;
         }
       } catch (error) {
@@ -587,6 +591,9 @@ Page({
       }
     }
     this.setData({ showWelcome: false });
+    // 欢迎页已看完，按“隐私 → 欢迎 → 公告”的顺序接力弹出新功能公告
+    if (app.setWelcomeActive) app.setWelcomeActive(false);
+    if (app.pumpAnnouncements) app.pumpAnnouncements();
   },
 
   // —— 首页最近账单：左滑删除 / 点击编辑 / 引导提示 ——

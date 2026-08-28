@@ -25,10 +25,13 @@ Component({
 
     open() {
       this.setData({ show: true });
+      // 上报展示状态，新功能公告等后续弹层会避让，保证隐私指引最先出现
+      if (app.setPrivacyPopupOpen) app.setPrivacyPopupOpen(true);
     },
 
     close() {
       this.setData({ show: false });
+      if (app.setPrivacyPopupOpen) app.setPrivacyPopupOpen(false);
     },
 
     openContract() {

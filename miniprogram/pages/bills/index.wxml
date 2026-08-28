@@ -116,4 +116,5 @@
     </view>
   </view>
 <privacy-popup />
+<announcement-popup />
 </view>

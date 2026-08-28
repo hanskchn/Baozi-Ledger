@@ -64,7 +64,8 @@
   "lazyCodeLoading": "requiredComponents",
   "__usePrivacyCheck__": true,
   "usingComponents": {
-    "privacy-popup": "/components/privacy-popup/index"
+    "privacy-popup": "/components/privacy-popup/index",
+    "announcement-popup": "/components/announcement-popup/index"
   },
   "permission": {
     "scope.writePhotosAlbum": {
