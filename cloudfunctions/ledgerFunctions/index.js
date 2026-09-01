@@ -1151,6 +1151,7 @@ const getReminderSummary = (doc) => ({
   remindHour: normalizeRemindHour(doc?.remindHour),
   familyId: doc?.familyId || "",
   familyName: doc?.familyName || "",
+  pausedReason: doc?.pausedReason || "",
   remaining: Math.max(0, (Number(doc?.grantedCount) || 0) - (Number(doc?.sentCount) || 0)),
   templateId: REMINDER_TEMPLATE_ID,
   hours: REMINDER_HOURS
@@ -1216,7 +1217,8 @@ const reportReminderGrant = async (event) => {
     await applyReminderFamilySnapshot(snapshotPatch, event.familyId, openid);
   } catch (error) { /* 授权额度上报尽力而为，账本校验失败不影响计数 */ }
   const now = new Date();
-  const incrementPatch = { grantedCount: command.inc(granted), lastGrantedAt: now, updatedAt: now, ...snapshotPatch };
+  // 每次成功授权即视为重新订阅意向：恢复自动推送（需求基线：43101 自动暂停后“重新授权后恢复”）
+  const incrementPatch = { grantedCount: command.inc(granted), enabled: true, pausedReason: "", lastGrantedAt: now, updatedAt: now, ...snapshotPatch };
   const existing = await getReminderDoc(openid);
   const ref = db.collection("reminder_subscriptions").doc(getReminderDocId(openid));
   if (existing) await ref.update({ data: incrementPatch });

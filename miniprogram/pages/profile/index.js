@@ -195,7 +195,10 @@ Page({
   // ==================== 每日记账提醒 ====================
 
   buildReminderValueText(reminder) {
-    if (!reminder.enabled) return "未开启";
+    if (!reminder.enabled) {
+      if (reminder.pausedReason === "no_quota") return "已暂停（额度用完）";
+      return "未开启";
+    }
     const option = this.data.reminderOptions.find((item) => item.hour === reminder.remindHour);
     let text = "每天 " + (option ? option.label : "21:00");
     if (reminder.renewBlocked) text += " · 请重新允许";
@@ -212,12 +215,17 @@ Page({
     const cache = dailyReminder.getCache();
     const blocked = next.renewBlocked === true || (cache && cache.renewBlocked === true);
     const remaining = Number(next.remaining) || 0;
-    // 仅当额度不足（≤ 5）或已被永久拒收时才需要展示“补一条 / 重新允许”；额度足够时不显示，保持清爽
-    const showQuota = next.enabled === true && (blocked || remaining <= 5);
+    const pausedNoQuota = next.pausedReason === "no_quota";
+    // 已开启（额度不足）或自动暂停（额度用尽）时展示“补一条 / 重新允许”；额度足够且正常时不显示，保持清爽
+    const showQuota = (next.enabled === true || pausedNoQuota) && (blocked || pausedNoQuota || remaining <= 5);
     this.setData({
       reminder: next,
       reminderValueText: this.buildReminderValueText({ ...next, renewBlocked: blocked }),
-      reminderQuotaText: blocked ? "" : `剩余 ${remaining} 条提醒额度`,
+      reminderQuotaText: blocked
+        ? ""
+        : pausedNoQuota
+          ? "额度已用完，提醒已暂停，补一条即可恢复"
+          : `剩余 ${remaining} 条提醒额度`,
       showQuota,
       renewBlocked: blocked
     });
@@ -267,7 +275,7 @@ Page({
     this.setData({ showReminderGuide: false, reminderSaving: true });
     try {
       // 「同意并开启」= 唯一订阅意向：首次授权（微信必须弹一次系统窗）。
-      // 之后不再批量补；额度靠“记账后 / 打开小程序时”由本人自动静默补（见 dailyReminder.autoRenewIfNeeded）。
+      // 之后不再批量补；额度靠“记账成功后”在用户手势回调里自动补，也可手动「补一条」（见 dailyReminder.autoRenewIfNeeded）。
       const result = await dailyReminder.requestSubscribe();
       if (result.granted < 1) {
         wx.showToast({ title: this.describeSubscribeRefusal(result.raw), icon: "none" });

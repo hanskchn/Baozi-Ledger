@@ -151,7 +151,7 @@
       <text wx:if="{{renewBlocked}}" class="reminder-renew-link" catchtap="openReminderSettings">去设置重新允许</text>
     </view>
 
-    <text class="reminder-tip">首次授权请勾选「总是保持以上选择」，之后打开小程序会自动为您补足推送额度，无需手动续订。</text>
+    <text class="reminder-tip">记完一笔账会自动补足推送额度；首次授权时勾选「总是保持以上选择」，之后续订无需再次点击弹窗。额度不足时也可点「补一条」手动续订。</text>
   </view>
 
   <!-- 开启提醒 · 瑞幸式底部授权说明 -->

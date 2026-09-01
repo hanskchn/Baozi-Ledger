@@ -1,11 +1,11 @@
 // 每日记账提醒（微信一次性订阅消息）共享工具。
-// 职责：模板 ID 常量、本地缓存副本、自动补足（记账成功后 / 打开小程序时静默续订）。
+// 职责：模板 ID 常量、本地缓存副本、自动补足（仅挂在用户点击手势回调里，当前为记账成功后的弹窗回调）。
 // 设置的读写走 ledgerFunctions 云函数（getReminderSetting / saveReminderSetting / reportReminderGrant），
 // 本文件不直接读写数据库，只维护一份本地缓存供各页面快速判断是否需要自动补足。
 
 const TEMPLATE_ID = "-Jfjvy5CY9tEPP8Wck9XLPFu-iHWfzXRg4Us37LA058";
 const STORAGE_KEY = "dailyReminderState";
-// 剩余可发条数低于该阈值时，会在记账成功后 / 打开小程序时自动补 1 条；高于则不打扰
+// 剩余可发条数低于该阈值时，会在记账成功后（用户手势回调）自动补 1 条；高于则不打扰
 const RENEW_THRESHOLD = 5;
 // 并发防重复：同一时刻只允许一个自动补足请求在进行
 let renewingBusy = false;
@@ -95,7 +95,7 @@ const shouldAutoTopup = () => {
   return { ok: true, reason: "ok" };
 };
 
-// 自动补足：记账成功后 / 打开小程序时调用。只有“已开启 + 未拒绝 + 额度不足”才真正申请。
+// 自动补足：仅在用户手势回调中调用（微信要求 requestSubscribeMessage 由点击触发），当前仅记账成功后触发。
 // busy 标志防同一时刻重复请求（记账回调与 onShow 极可能同时触发），无时间冷却。
 const autoRenewIfNeeded = async () => {
   const before = shouldAutoTopup();
