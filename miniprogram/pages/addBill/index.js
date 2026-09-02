@@ -371,9 +371,12 @@ Page({
   selectRecentCategory(event) {
     const item = event.currentTarget.dataset.item;
     if (!item) return;
-    const parent = (this.data.categories || []).find((p) =>
-      (p.children || []).some((c) => c.name === item.name)
-    );
+    // 优先用记录时保存的一级分类定位父级，避免不同一级分类下同名二级分类（如"其他"）匹配错父级
+    const parent =
+      (this.data.categories || []).find((p) =>
+        item.category1 && p.name === item.category1 && (p.children || []).some((c) => c.name === item.name)
+      ) ||
+      (this.data.categories || []).find((p) => (p.children || []).some((c) => c.name === item.name));
     if (!parent) {
       wx.showToast({ title: "该分类已停用", icon: "none" });
       const recent = this.filterRecentCategories(this.loadRecentCategories());
@@ -400,7 +403,12 @@ Page({
 
   selectCategory2(event) {
     const child = event.currentTarget.dataset.child;
-    const parent = this.data.categories.find((item) => item.children.some((c) => c.name === child.name));
+    // 优先按二级分类唯一 id 反查父级，其次取侧边栏当前选中的一级分类，
+    // 避免不同一级分类下同名二级分类（如"其他"）被解析到第一个同名一级分类
+    const parent =
+      this.data.categories.find((item) => child.id && item.children.some((c) => c.id === child.id)) ||
+      this.data.categories.find((item) => item.name === this.data.selectedCategory1 && item.children.some((c) => c.name === child.name)) ||
+      this.data.categories.find((item) => item.children.some((c) => c.name === child.name));
     const cat1 = parent ? parent.name : this.data.category1;
     const cat1Icon = parent ? parent.icon : this.data.category1Icon;
     this.saveRecentCategory(child.name, child.icon, cat1, cat1Icon);
