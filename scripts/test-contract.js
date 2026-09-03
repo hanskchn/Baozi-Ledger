@@ -393,3 +393,44 @@ test("fake-db and() 支持链式（gte().and().and()）", () => {
   assert.equal(matchValue("2026-08-13 12:00", cond), true);
   assert.equal(matchValue("2026-09-01 00:00", cond), false);
 });
+
+test("saveBillPreferences/read 在历史随机 id 文档并存时仍收敛到确定性主档", async () => {
+  seed();
+  openid = "admin";
+  // 历史遗留：随机 id 文档持有旧值，且与新格式并存
+  db._rows("bill_preferences").push(
+    { _id: "legacy-random", familyId: "famA", openid: "admin", expenseCategory: { category1: "居住", category2: "其他" }, incomeCategory: null, account: "银行卡" }
+  );
+  const saved = await invoke({ action: "saveBillPreferences", familyId: "famA", expenseCategory: { category1: "餐饮", category2: "午餐" }, incomeCategory: { category1: "红包", category2: "拼手气" }, account: "微信" });
+  assert.equal(saved.success, true);
+  const read = await invoke({ action: "getBillPreferences", familyId: "famA" });
+  assert.deepEqual(read.preferences, {
+    expenseCategory: { category1: "餐饮", category2: "午餐" },
+    incomeCategory: { category1: "红包", category2: "拼手气" },
+    account: "微信"
+  });
+});
+
+test("getBillPreferences 无主档时从历史随机 id 文档迁移并读取", async () => {
+  seed();
+  openid = "member";
+  db._rows("bill_preferences").push(
+    { _id: "legacy-old", familyId: "famA", openid: "member", expenseCategory: null, incomeCategory: { category1: "工资", category2: "底薪" }, account: "零钱" }
+  );
+  const read = await invoke({ action: "getBillPreferences", familyId: "famA" });
+  assert.equal(read.success, true);
+  assert.deepEqual(read.preferences, {
+    expenseCategory: null,
+    incomeCategory: { category1: "工资", category2: "底薪" },
+    account: "零钱"
+  });
+  // 迁移后主档已建立：再保存一次应写同一主档
+  const saved = await invoke({ action: "saveBillPreferences", familyId: "famA", incomeCategory: { category1: "红包", category2: "拼手气" }, account: "微信" });
+  assert.equal(saved.success, true);
+  const again = await invoke({ action: "getBillPreferences", familyId: "famA" });
+  assert.deepEqual(again.preferences, {
+    expenseCategory: null,
+    incomeCategory: { category1: "红包", category2: "拼手气" },
+    account: "微信"
+  });
+});

@@ -1078,8 +1078,44 @@ const listFormOptions = async (event) => {
 
 const getBillPreferences = async (event) => {
   await requireMember(event.familyId);
-  const result = await db.collection("bill_preferences").where({ familyId: event.familyId, openid: getOpenid() }).limit(1).get();
-  return { success: true, preferences: toClientBillPreferences(result.data[0]) };
+  const familyId = event.familyId;
+  const openid = getOpenid();
+  // 读写统一收敛到确定性主档，避免历史随机 id 文档并存时 limit(1) 随机命中
+  const docId = getStableDocumentId("bill-preference", familyId, openid);
+  const ref = db.collection("bill_preferences").doc(docId);
+  let data = null;
+  try {
+    const snapshot = await ref.get();
+    if (snapshot && snapshot.data) {
+      data = snapshot.data;
+    }
+  } catch (error) {
+    // 主档尚未建立：尝试从历史文档一次性迁移
+  }
+  if (!data) {
+    try {
+      const legacyResult = await db.collection("bill_preferences").where({ familyId, openid }).limit(1).get();
+      const legacy = legacyResult.data[0];
+      if (legacy) {
+        data = {
+          familyId: legacy.familyId,
+          openid: legacy.openid,
+          expenseCategory: legacy.expenseCategory || null,
+          incomeCategory: legacy.incomeCategory || null,
+          account: legacy.account || "现金",
+          updatedAt: legacy.updatedAt
+        };
+        try {
+          await ref.set({ data: { ...data, createdAt: new Date() } });
+        } catch (setError) {
+          console.warn("偏好主档迁移失败", setError);
+        }
+      }
+    } catch (queryError) {
+      console.warn("读取历史偏好失败", queryError);
+    }
+  }
+  return { success: true, preferences: toClientBillPreferences(data) };
 };
 
 // 偏好字段仅接受白名单形状：分类记忆为 { category1, category2 } 短文本对象，账户为短文本
@@ -1104,7 +1140,6 @@ const sanitizeAccountPreference = (value) => {
 const saveBillPreferences = async (event) => {
   await requireMember(event.familyId);
   const openid = getOpenid();
-  const existing = await db.collection("bill_preferences").where({ familyId: event.familyId, openid }).limit(1).get();
   const data = {
     familyId: event.familyId,
     openid,
@@ -1113,17 +1148,17 @@ const saveBillPreferences = async (event) => {
     account: sanitizeAccountPreference(event.account) || "现金",
     updatedAt: new Date()
   };
-  if (existing.data[0]) {
+  // 单一确定性主键：写读都收敛到同一文档，避免历史随机 id 文档 + 新文档并存导致取到旧值
+  const ref = db.collection("bill_preferences").doc(getStableDocumentId("bill-preference", event.familyId, openid));
+  try {
+    await ref.update({ data });
+  } catch (updateError) {
     try {
-      await db.collection("bill_preferences").doc(existing.data[0]._id).update({ data });
-    } catch (error) {
-      // 兼容旧数据或已失效文档，更新失败时重建偏好记录，不阻断记账。
-      console.warn("更新记账偏好失败，改为重建", error);
-      await db.collection("bill_preferences").doc(getStableDocumentId("bill-preference", event.familyId, openid)).set({ data: { ...data, createdAt: new Date() } });
+      await ref.set({ data: { ...data, createdAt: new Date() } });
+    } catch (setError) {
+      console.warn("写记账偏好失败", setError);
+      throw new Error("偏好保存失败，请稍后重试");
     }
-  } else {
-    // 确定性文档 ID 使并发保存收敛到同一文档，避免查后插竞态产生重复记录
-    await db.collection("bill_preferences").doc(getStableDocumentId("bill-preference", event.familyId, openid)).set({ data: { ...data, createdAt: new Date() } });
   }
   return { success: true };
 };

@@ -228,6 +228,7 @@
 | 2026-09-03（补丁） | ledgerFunctions（38.4 KB） | 邀请限流升级为数据库全局计数，修复多实例绕过 | `npm test` 91 项零回归 + `verify` 13 步存量 3 告警 | ✅ 部署成功（IDE CLI） | `rate_limits` 集合新引入；13 次连续调用第 13 次应拒绝 |
 | 2026-09-03（补丁） | resetTestData（2.3 KB） | `ALL_COLLECTIONS` 纳入 `rate_limits` | 同上 | ✅ 部署成功（IDE CLI） | 测试环境清除数据时联动清理限流计数 |
 | 2026-09-03（补丁） | accountingFunctions（38.4 KB） | 偏好校验改为对象形状白名单（原只允许字符串导致前端偏好被拒） | `npm test` 92 项零回归 + `verify` 13 步存量 3 告警 | ✅ 部署成功（IDE CLILI） | 复测：记类别保存→重启→最近使用恢复 |
+| 2026-09-03（补丁2） | accountingFunctions（38.7 KB） | 写读偏好收敛到单一确定性主档，修复历史随机 id 文档并存导致读回旧值 | `npm test` 94 项零回归 + `verify` 13 步存量 3 告警 | ✅ 部署成功（IDE CLI） | 复测：收入态保存后立即读回应为新值 |
 
 ---
 
