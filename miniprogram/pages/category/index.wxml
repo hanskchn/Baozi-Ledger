@@ -11,7 +11,7 @@
   </view>
 
   <view class="list-loading" wx:if="{{loading && categories.length === 0}}"><view class="loading-spinner"></view><text>分类加载中…</text></view>
-  <view class="list-error" wx:if="{{errorMessage && !loading}}">{{errorMessage}}<view class="list-error-tip">下拉可重试</view></view>
+  <view class="list-error" wx:if="{{errorMessage && !loading}}" bindtap="onRetry">{{errorMessage}}<view class="list-error-tip">点击重试，或下拉刷新</view></view>
   <view class="category-list" wx:if="{{categories.length > 0}}">
     <view class="category-group {{item.enabled === false ? 'is-disabled' : ''}} {{expandedMap[item.id] ? 'is-expanded' : ''}}" wx:for="{{categories}}" wx:key="id">
       <view class="category1-header" data-id="{{item.id}}" bindtap="toggleExpand">

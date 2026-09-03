@@ -99,6 +99,7 @@ Page({
     }
   },
   async onPullDownRefresh() { await this.load(); wx.stopPullDownRefresh(); },
+  onRetry() { this.load(); },
 
   switchType(event) {
     const type = event.currentTarget.dataset.type;

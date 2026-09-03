@@ -13,6 +13,7 @@ page {
   font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
   color: #5D4037;
   font-size: 28rpx;
+  min-height: 100vh;
 }
 
 view, text {
