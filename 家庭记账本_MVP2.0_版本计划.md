@@ -210,7 +210,7 @@
 |---|---|---|---|
 | 0 | 提交现有修复（addBill 同名二级分类） | ✅ 已提交 `7c7da8a` | 无回归 |
 | 1 | 云函数安全加固 S1-S10 | ✅ 代码完成、门禁通过；⏳ 部署统一到目标 5 | `npm test` 91 项 84 过 / 存量 7；`verify` 13 项 3 存量 |
-| 2 | 性能还债：searchBills 聚合分页、分类账户批量 `where().update`、dailyReminder 分页+小并发、导入分批 200 条 | ✅ 代码完成、门禁通过；⏳ 部署中 | `npm test` 108 项 101 过 / 存量 7；`verify` 13 项 3 存量告警 |
+| 2 | 性能还债：searchBills 聚合分页、分类账户批量 `where().update`、dailyReminder 分页+小并发、导入分批 200 条 | ✅ 已闭环并部署（2026-09-03） | `npm test` 108 项 101 过 / 存量 7；`verify` 13 项 3 存量告警 |
 | 3 | 体验补齐：U7 偏好缓存互踩（最高优先）、loading/下拉刷新/分页 footer 等 | ⏳ 未启动 | — |
 | 4 | 质量回归：清偿存量 7 失败 + 3 告警、契约门禁扩展 feedback/resetTestData、Q6/Q7 清理 | ⏳ 未启动 | — |
 | 5 | 部署 + 双账号 18 场景 + 真机走查 + 发版 | ⏳ 待用户打开微信开发者工具并登录、Phase E 验收环境就绪 | 部署记录见 §7 |
@@ -229,6 +229,8 @@
 | 2026-09-03（补丁） | resetTestData（2.3 KB） | `ALL_COLLECTIONS` 纳入 `rate_limits` | 同上 | ✅ 部署成功（IDE CLI） | 测试环境清除数据时联动清理限流计数 |
 | 2026-09-03（补丁） | accountingFunctions（38.4 KB） | 偏好校验改为对象形状白名单（原只允许字符串导致前端偏好被拒） | `npm test` 92 项零回归 + `verify` 13 步存量 3 告警 | ✅ 部署成功（IDE CLILI） | 复测：记类别保存→重启→最近使用恢复 |
 | 2026-09-03（补丁2） | accountingFunctions（38.7 KB） | 写读偏好收敛到单一确定性主档，修复历史随机 id 文档并存导致读回旧值 | `npm test` 94 项零回归 + `verify` 13 步存量 3 告警 | ✅ 部署成功（IDE CLI） | 复测：收入态保存后立即读回应为新值 |
+| 2026-09-03 | ledgerFunctions（39.0 KB） | 目标 2 性能还债：每日提醒分页 500/批 + 5 并发 + 5000 硬上限保护 | `npm test` 108 项（存量 7 零回归）+ `verify` 13 步（存量 3 记录在案） | ✅ 部署成功（IDE CLI） | 分两份部署时需逐个函数名执行（IDE CLI 不支持逗号列表） |
+| 2026-09-03 | accountingFunctions（39.8 KB） | 目标 2 性能还债：searchBills 数据库级过滤分页、分类/账户改名与删除改 `where().update`/limit、导入分批（同 batchId 整批可回滚） | 同上 | ✅ 部署成功（IDE CLI） | `buildVersion` 更新为 `2026-09-03-p2-perf-search-batch` |
 
 ---
 
