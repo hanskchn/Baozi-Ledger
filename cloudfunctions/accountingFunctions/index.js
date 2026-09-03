@@ -404,6 +404,7 @@ const setCategoryEnabled = async (event) => {
 const renameCategory = async (event) => {
   await requireAdmin(event.familyId);
   const category = (await db.collection("categories").doc(event.categoryId).get()).data;
+  const oldName = String(category?.name || "");
   const name = String(event.name || "").trim();
   const icon = event.icon ? String(event.icon).trim().slice(0, 10) : "";
   if (!category || category.familyId !== event.familyId || !name || name.length > 20) throw new Error("分类信息无效");
@@ -417,17 +418,17 @@ const renameCategory = async (event) => {
   const parentName = category.parentId
     ? (await db.collection("categories").doc(category.parentId).get()).data.name
     : null;
-  const bills = await getAllBills({ familyId: event.familyId, deleted: false });
-  const matchedBills = bills.filter((bill) => category.parentId
-    ? bill.type === category.type && bill.category1 === parentName && bill.category2 === category.name
-    : bill.type === category.type && bill.category1 === category.name);
-  await Promise.all(matchedBills.map((bill) => db.collection("bills").doc(bill._id).update({
-    data: category.parentId
-      ? { category2: name, category2Icon: newIcon, updatedAt: now }
-      : { category1: name, category1Icon: newIcon, updatedAt: now }
-  })));
+  // 批量改名改为 where().update，避免全量拉回账单后逐条更新；只影响本账本未删除账单
+  const billWhere = category.parentId
+    ? { familyId: event.familyId, deleted: false, type: category.type, category1: parentName, category2: oldName }
+    : { familyId: event.familyId, deleted: false, type: category.type, category1: oldName };
+  const updateData2 = category.parentId
+    ? { category2: name, category2Icon: newIcon, updatedAt: now }
+    : { category1: name, category1Icon: newIcon, updatedAt: now };
+  const affected = await db.collection("bills").where(billWhere).update({ data: updateData2 });
+  const affectedBills = Number(affected.stats?.updated) || 0;
   memCacheDel(`categories:${event.familyId}`);
-  await writeOperationLog(event.familyId, "category.rename", category._id, { from: category.name, name, affectedBills: matchedBills.length });
+  await writeOperationLog(event.familyId, "category.rename", category._id, { from: oldName, name, affectedBills });
   return { success: true };
 };
 
@@ -461,11 +462,12 @@ const deleteCategory = async (event) => {
   await requireAdmin(event.familyId);
   const category = (await db.collection("categories").doc(event.categoryId).get()).data;
   if (!category || category.familyId !== event.familyId) throw new Error("分类不存在");
-  const bills = await getAllBills({ familyId: event.familyId, deleted: false });
   const parent = category.parentId ? (await db.collection("categories").doc(category.parentId).get()).data : null;
-  const used = bills.some((bill) => category.parentId
-    ? bill.type === category.type && bill.category1 === parent.name && bill.category2 === category.name
-    : bill.type === category.type && bill.category1 === category.name);
+  const usageWhere = category.parentId
+    ? { familyId: event.familyId, deleted: false, type: category.type, category1: parent?.name, category2: category.name }
+    : { familyId: event.familyId, deleted: false, type: category.type, category1: category.name };
+  const usage = await db.collection("bills").where(usageWhere).limit(1).get();
+  const used = usage.data.length > 0;
   if (used) {
     await setCategoryEnabled({ ...event, enabled: false });
     return { success: true, disabled: true };
@@ -488,8 +490,8 @@ const deleteAccount = async (event) => {
   await requireAdmin(event.familyId);
   const account = (await db.collection("accounts").doc(event.accountId).get()).data;
   if (!account || account.familyId !== event.familyId) throw new Error("账户不存在");
-  const bills = await getAllBills({ familyId: event.familyId, deleted: false });
-  if (bills.some((bill) => bill.account === account.name)) {
+  const usage = await db.collection("bills").where({ familyId: event.familyId, deleted: false, account: account.name }).limit(1).get();
+  if (usage.data.length > 0) {
     await setAccountEnabled({ ...event, enabled: false });
     return { success: true, disabled: true };
   }
@@ -506,17 +508,18 @@ const deleteAccount = async (event) => {
 const renameAccount = async (event) => {
   await requireAdmin(event.familyId);
   const account = (await db.collection("accounts").doc(event.accountId).get()).data;
+  const oldName = String(account?.name || "");
   const name = String(event.name || "").trim();
   if (!account || account.familyId !== event.familyId || !name || name.length > 20) throw new Error("账户信息无效");
   const accounts = await db.collection("accounts").where({ familyId: event.familyId }).get();
   if (accounts.data.some((item) => item._id !== account._id && normalizeName(item.name) === normalizeName(name))) throw new Error("账户名称已存在");
   const now = new Date();
   await db.collection("accounts").doc(account._id).update({ data: { name, updatedAt: now } });
-  const bills = await getAllBills({ familyId: event.familyId, deleted: false });
-  const matchedBills = bills.filter((bill) => bill.account === account.name);
-  await Promise.all(matchedBills.map((bill) => db.collection("bills").doc(bill._id).update({ data: { account: name, updatedAt: now } })));
+  // 批量改名，避免逐条 Promise.all 更新
+  const affected = await db.collection("bills").where({ familyId: event.familyId, deleted: false, account: oldName }).update({ data: { account: name, updatedAt: now } });
+  const affectedBills = Number(affected.stats?.updated) || 0;
   memCacheDel(`accounts:${event.familyId}`);
-  await writeOperationLog(event.familyId, "account.rename", account._id, { from: account.name, name, affectedBills: matchedBills.length });
+  await writeOperationLog(event.familyId, "account.rename", account._id, { from: oldName, name, affectedBills });
   return { success: true };
 };
 
@@ -577,15 +580,39 @@ const getBudgetPageData = async (event) => {
   };
 };
 
+// ==================== 搜索（P1 数据库级过滤 + 分页） ====================
+// 旧实现把整本账单拉回内存过滤，账单数万条后必超时；改为 where + $or（正则转义）在数据库
+// 侧过滤，只把匹配分页取回。金额是“分”整数存库，数据库无法对数字做子串匹配，纯数字关键词
+// 统一收敛为“格式化金额前缀”区间近似（如 "88"→88.00-88.99）；发票级精确匹配仍走文本字段。
+const SEARCH_TEXT_FIELDS = ["remark", "merchant", "category1", "category2", "member", "account"];
+const SEARCH_BILL_PAGE_SIZE = 20;
+const SEARCH_BILL_PAGE_MAX = 50;
+// “元”文本 → 分 区间：如 "88"→[8800,8899]、"88.5"→[8850,8859]、"88.56"→[8856,8856]
+const buildAmountSearchCents = (keyword) => {
+  if (!/^\d{1,7}(?:\.\d{1,2})?$/.test(keyword)) return null;
+  const [yuanPart, decPart = ""] = keyword.split(".");
+  const start = Number(yuanPart) * 100 + Number(decPart.padEnd(2, "0").slice(0, 2));
+  const span = decPart.length === 0 ? 99 : decPart.length === 1 ? 9 : 0;
+  return { start, end: start + span };
+};
+
 const searchBills = async (event) => {
   await requireMember(event.familyId);
   const keyword = String(event.keyword || "").trim();
-  if (!keyword) return { success: true, bills: [] };
+  if (!keyword) return { success: true, bills: [], hasMore: false };
+  const limit = Math.min(Math.max(Number(event.limit) || SEARCH_BILL_PAGE_SIZE, 1), SEARCH_BILL_PAGE_MAX);
+  const offset = Math.max(0, Number(event.offset) || 0);
   const lower = keyword.toLowerCase();
-  // 搜索必须覆盖当前账本的全部有效账单，不能因最近 100 条的截断漏掉历史记录。
-  const visibleBills = (await anonymizeCancelledBillMembers(event.familyId, await getAllBills({ familyId: event.familyId, deleted: false }))).map(projectBill);
-  const bills = visibleBills.filter((bill) => [bill.remark, bill.merchant, bill.category1, bill.category2, bill.member, bill.account, (bill.amount / 100).toFixed(2)].some((value) => String(value || "").toLowerCase().includes(lower)));
-  return { success: true, bills: bills.slice(0, 20) };
+  const escaped = escapeRegExp(lower);
+  const conditions = SEARCH_TEXT_FIELDS.map((field) => ({ [field]: db.RegExp({ regexp: escaped, options: "i" }) }));
+  const amountRange = buildAmountSearchCents(lower);
+  if (amountRange) conditions.push({ amount: db.command.gte(amountRange.start).and(db.command.lte(amountRange.end)) });
+  const result = await db.collection("bills").where({ familyId: event.familyId, deleted: false, $or: conditions })
+    .orderBy("date", "desc").orderBy("_id", "desc").skip(offset).limit(limit + 1).get();
+  const pageData = result.data.slice(0, limit);
+  const hasMore = result.data.length > limit;
+  const visibleBills = (await anonymizeCancelledBillMembers(event.familyId, pageData)).map(projectBill);
+  return { success: true, bills: visibleBills, hasMore, offset: offset + pageData.length };
 };
 
 const formatImportedDate = (value) => {
@@ -681,19 +708,26 @@ const confirmImport = async (event) => {
   const rows = await loadImportRows(event.fileID);
   if (!rows.length) throw new Error("导入文件没有可处理的账单");
   if (rows.length > 2000) throw new Error("单次最多导入 2000 条账单");
+  // 分批导入（方案 A）：客户端按 batchSize 切片连续调用，携带同一 batchId 便于整批回滚
+  const sliceStart = Math.min(Math.max(Number(event.offset) || 0, 0), rows.length);
+  const explicitBatchSize = Number(event.batchSize) > 0 ? Number(event.batchSize) : 0;
+  // 未显式分批（老客户端/单次全量）时按整包处理，保持旧行为；显式分批单批上限 500
+  const sliceSize = explicitBatchSize > 0 ? Math.min(explicitBatchSize, 500) : rows.length;
+  const sliceRows = rows.slice(sliceStart, sliceStart + sliceSize);
+  if (!sliceRows.length) throw new Error("导入批次参数无效");
+  const batchId = /^import_\d+$/.test(String(event.batchId || "")) ? String(event.batchId) : "import_" + Date.now();
   const invalid = [];
-  for (const row of rows) {
+  for (const row of sliceRows) {
     const reason = validateRowForImport(row);
     if (reason) invalid.push({ rowNumber: row.rowNumber, reason });
   }
-  if (invalid.length === rows.length) throw new Error("全部 " + rows.length + " 行均无效，请检查文件格式");
-  const batchId = "import_" + Date.now();
+  if (invalid.length === sliceRows.length) throw new Error("全部 " + sliceRows.length + " 行均无效，请检查文件格式");
   const members = await getFamilyMembers(event.familyId, "active");
   const amountRe = /^(?:0|[1-9]\d{0,6})(?:\.\d{1,2})?$/;
   const dateRe = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/;
   const invalidRowNumbers = new Set(invalid.map((item) => item.rowNumber));
-  const validRows = rows.filter((row) => !invalidRowNumbers.has(row.rowNumber) && amountRe.test(row.amount || "") && dateRe.test(row.date || ""));
-  if (!validRows.length) throw new Error("全部 " + rows.length + " 行均无效，请检查文件格式");
+  const validRows = sliceRows.filter((row) => !invalidRowNumbers.has(row.rowNumber) && amountRe.test(row.amount || "") && dateRe.test(row.date || ""));
+  if (!validRows.length) throw new Error("全部 " + sliceRows.length + " 行均无效，请检查文件格式");
 
   // 1. 预取该账本所有相关分类 + 账户，避免逐行 find 单条
   const types = Array.from(new Set(validRows.map((r) => r.type)));
@@ -818,7 +852,17 @@ const confirmImport = async (event) => {
     throw firstError;
   }
   await writeOperationLog(event.familyId, "import.confirm", batchId, { imported, total: rows.length, invalid: invalid.length });
-  return { success: true, imported, importedExpense, importedIncome, skipped: invalid.length, invalid, batchId };
+  return {
+    success: true,
+    imported,
+    importedExpense,
+    importedIncome,
+    skipped: invalid.length,
+    invalid,
+    batchId,
+    total: rows.length,
+    remaining: Math.max(0, rows.length - (sliceStart + imported))
+  };
 };
 
 // 校验单行数据，返回 null 表示有效，否则返回错误原因
@@ -841,10 +885,11 @@ const rollbackImport = async (event) => {
   await requireAdmin(event.familyId);
   const batchId = String(event.batchId || "");
   if (!batchId) throw new Error("导入批次无效");
-  const result = await getAllBills({ familyId: event.familyId, importBatchId: batchId, deleted: false });
   const now = new Date();
-  await Promise.all(result.map((bill) => db.collection("bills").doc(bill._id).update({ data: { deleted: true, deletedAt: now, deletedBy: getOpenid(), updatedAt: now, version: (bill.version || 1) + 1 } })));
-  const activeBills = await getAllBills({ familyId: event.familyId, deleted: false });
+  // 整批软删除一次 where().update 完成，避免逐条更新
+  const removedRes = await db.collection("bills").where({ familyId: event.familyId, importBatchId: batchId, deleted: false })
+    .update({ data: { deleted: true, deletedAt: now, deletedBy: getOpenid(), updatedAt: now, version: db.command.inc(1) } });
+  const removed = Number(removedRes.stats?.updated) || 0;
   const createdCategories = await db.collection("categories").where({ familyId: event.familyId, createdByImportBatchId: batchId }).get();
   const createdAccounts = await db.collection("accounts").where({ familyId: event.familyId, createdByImportBatchId: batchId }).get();
   let removedCategories = 0;
@@ -852,22 +897,25 @@ const rollbackImport = async (event) => {
   const childCategories = createdCategories.data.filter((item) => item.parentId);
   for (const category of childCategories) {
     const parent = (await db.collection("categories").doc(category.parentId).get()).data;
-    const isUsed = activeBills.some((bill) => bill.type === category.type && bill.category1 === parent?.name && bill.category2 === category.name);
+    const usage = await db.collection("bills").where({ familyId: event.familyId, deleted: false, type: category.type, category1: parent?.name, category2: category.name }).limit(1).get();
+    const isUsed = usage.data.length > 0;
     if (!isUsed) { await db.collection("categories").doc(category._id).remove(); removedCategories += 1; }
   }
   const parentCategories = createdCategories.data.filter((item) => !item.parentId);
   for (const category of parentCategories) {
     const children = await db.collection("categories").where({ familyId: event.familyId, parentId: category._id }).get();
-    const isUsed = activeBills.some((bill) => bill.type === category.type && bill.category1 === category.name);
+    const usage = await db.collection("bills").where({ familyId: event.familyId, deleted: false, type: category.type, category1: category.name }).limit(1).get();
+    const isUsed = usage.data.length > 0;
     if (!isUsed && children.data.length === 0) { await db.collection("categories").doc(category._id).remove(); removedCategories += 1; }
   }
   for (const account of createdAccounts.data) {
-    if (!activeBills.some((bill) => bill.account === account.name)) { await db.collection("accounts").doc(account._id).remove(); removedAccounts += 1; }
+    const usage = await db.collection("bills").where({ familyId: event.familyId, deleted: false, account: account.name }).limit(1).get();
+    if (usage.data.length === 0) { await db.collection("accounts").doc(account._id).remove(); removedAccounts += 1; }
   }
   memCacheDel(`categories:${event.familyId}`);
   memCacheDel(`accounts:${event.familyId}`);
-  await writeOperationLog(event.familyId, "import.rollback", batchId, { count: result.length, removedCategories, removedAccounts });
-  return { success: true, removed: result.length, removedCategories, removedAccounts };
+  await writeOperationLog(event.familyId, "import.rollback", batchId, { count: removed, removedCategories, removedAccounts });
+  return { success: true, removed, removedCategories, removedAccounts };
 };
 
 const EXPORT_BILL_LIMIT = 5000;
@@ -1579,7 +1627,7 @@ const getHomeSummary = async (event) => {
   };
 };
 
-const BUILD_VERSION = "2026-08-18-p0-batch-options";
+const BUILD_VERSION = "2026-09-03-p2-perf-search-batch";
 
 const main = async (event = {}) => {
   await ensureCollections();
@@ -1665,6 +1713,7 @@ if (typeof module !== "undefined") {
     escapeRegExp,
     toClientErrorMessage,
     sanitizeCategoryPreference,
-    sanitizeAccountPreference
+    sanitizeAccountPreference,
+    buildAmountSearchCents
   };
 }

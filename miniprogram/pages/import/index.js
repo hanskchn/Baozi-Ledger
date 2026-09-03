@@ -38,27 +38,50 @@ Page({
   async confirmImport() {
     if (!this.data.fileID || this.data.importing) return;
     this.setData({ importing: true });
+    // 方案 A：客户端按 200 条/批拆分连续调用，服务端同批共享 batchId，任一批失败可整批回滚
+    const BATCH_SIZE = 200;
+    const total = Number(this.data.total) || 0;
+    const batchCount = total > 0 ? Math.ceil(total / BATCH_SIZE) : 1;
+    let batchId = "";
+    let imported = 0;
+    let importedExpense = 0;
+    let importedIncome = 0;
     try {
-      const result = await this.call("confirmImport", { familyId: this.data.familyId, fileID: this.data.fileID });
-const expImp = result.importedExpense || 0;
-      const incImp = result.importedIncome || 0;
-      const invalidCount = (result.invalid || []).length;
+      for (let batchIndex = 0; batchIndex < batchCount; batchIndex += 1) {
+        const offset = batchIndex * BATCH_SIZE;
+        wx.showLoading({ title: "导入中 " + Math.min(offset + BATCH_SIZE, total) + "/" + total, mask: true });
+        const result = await this.call("confirmImport", {
+          familyId: this.data.familyId,
+          fileID: this.data.fileID,
+          offset,
+          batchSize: BATCH_SIZE,
+          ...(batchId ? { batchId } : {})
+        });
+        if (!batchId) batchId = result.batchId;
+        imported += result.imported || 0;
+        importedExpense += result.importedExpense || 0;
+        importedIncome += result.importedIncome || 0;
+      }
+      wx.hideLoading();
+      const invalidCount = (this.data.invalidList || []).length;
       const lines = [];
-      if (expImp + incImp > 0) {
-        lines.push("✅ 成功导入 " + result.imported + " 条");
+      if (importedExpense + importedIncome > 0) {
+        lines.push("✅ 成功导入 " + imported + " 条");
         const sub = [];
-        if (expImp) sub.push("支出 " + expImp + " 条");
-        if (incImp) sub.push("收入 " + incImp + " 条");
+        if (importedExpense) sub.push("支出 " + importedExpense + " 条");
+        if (importedIncome) sub.push("收入 " + importedIncome + " 条");
         if (sub.length) lines.push("  " + sub.join("，"));
       }
       if (invalidCount > 0) lines.push("⚠️ 跳过 " + invalidCount + " 条无效（见下方汇总）");
       wx.showModal({ title: "导入完成", content: lines.join("\n") || "本次没有导入任何账单", showCancel: false });
       // 保留 total / validCount / invalidList —— 导入成功后用户仍要看到本次解析汇总（尤其是无效行明细）
-      this.setData({ fileName: "", fileID: "", previewData: [], memberMappings: [], lastBatchId: result.batchId, invalidList: result.invalid || [] });
+      this.setData({ fileName: "", fileID: "", previewData: [], memberMappings: [], lastBatchId: batchId, invalidList: this.data.invalidList || [] });
     } catch (error) {
+      wx.hideLoading();
       if (error.batchId) {
         this.setData({ lastBatchId: error.batchId, fileName: "", fileID: "" });
-        wx.showModal({ title: "导入未完全完成", content: "已导入 " + (error.imported || 0) + " 条后中断，可撤销本次已导入的账单。", showCancel: false });
+        const partial = imported + (error.imported || 0);
+        wx.showModal({ title: "导入未完全完成", content: "已导入 " + partial + " 条后中断，可撤销本次已导入的账单。", showCancel: false });
       } else {
         wx.showToast({ title: error.message || "导入失败", icon: "none" });
       }

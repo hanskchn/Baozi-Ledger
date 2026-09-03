@@ -15,6 +15,7 @@ Module._load = function (request, parent, isMain) {
   return originalLoad.apply(this, arguments);
 };
 const m = require("../cloudfunctions/ledgerFunctions/index.js");
+const T = m.testUtils;
 
 const FUTURE = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
 const PAST = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
@@ -168,4 +169,58 @@ test("dissolveFamily 已解散幂等返回", async () => {
   const again = await invoke({ action: "dissolveFamily", familyId: "famA" });
   assert.equal(again.success, true);
   assert.equal(again.alreadyDissolved, true);
+});
+test("collectReminderSubscribers 分批拉取超单批上限不截断", async () => {
+  const db = seed();
+  for (let i = 0; i < 1200; i += 1) {
+    db._rows("reminder_subscriptions").push({ _id: "rem-" + i, openid: "sub" + i, enabled: true, remindHour: 9, grantedCount: 2, sentCount: 0 });
+  }
+  const { subs, truncated } = await T.collectReminderSubscribers({ enabled: true, remindHour: 9 }, { batchSize: 250 });
+  assert.equal(subs.length, 1200);
+  assert.equal(truncated, false);
+});
+
+test("collectReminderSubscribers 超过硬上限标记截断", async () => {
+  const db = seed();
+  for (let i = 0; i < 300; i += 1) {
+    db._rows("reminder_subscriptions").push({ _id: "rem-cap-" + i, openid: "cap" + i, enabled: true, remindHour: 9, grantedCount: 2, sentCount: 0 });
+  }
+  const { subs, truncated } = await T.collectReminderSubscribers({ enabled: true, remindHour: 9 }, { batchSize: 100, hardCap: 250 });
+  assert.equal(subs.length, 250);
+  assert.equal(truncated, true);
+});
+
+test("sendDailyReminders 并发投递：sent/skippedNoQuota/skippedRecorded 计数正确", async () => {
+  const db = seed();
+  fakeCloud.openapi = { subscribeMessage: { send: async () => ({}) } };
+  const now = new Date("2026-09-03T01:00:00.000Z"); // 北京时间 09:00
+  db._rows("reminder_subscriptions").push(
+    { _id: "rem-sent", openid: "admin", enabled: true, remindHour: 9, grantedCount: 5, sentCount: 0, familyId: "famA" },
+    { _id: "rem-quota", openid: "outsider", enabled: true, remindHour: 9, grantedCount: 1, sentCount: 1 },
+    { _id: "rem-recorded", openid: "member", enabled: true, remindHour: 9, grantedCount: 5, sentCount: 0, familyId: "famA" }
+  );
+  db._rows("bills").push({ _id: "b-today", familyId: "famA", memberOpenid: "member", deleted: false, date: "2026-09-03 08:00", amount: 1000 });
+  const result = await T.sendDailyReminders(now);
+  assert.equal(result.success, true);
+  assert.equal(result.slot, 9);
+  assert.equal(result.sent, 1, "有额度且今日未记账的用户应发送");
+  assert.equal(result.skippedNoQuota, 1, "额度耗尽的用户应跳过");
+  assert.equal(result.skippedRecorded, 1, "今日已记账的用户应跳过");
+  assert.equal(result.failed, 0);
+  const sentDoc = db._rows("reminder_subscriptions").find((r) => r._id === "rem-sent");
+  assert.equal(sentDoc.sentCount, 1, "发送成功后应累计 sentCount");
+  assert.equal(sentDoc.lastError, "");
+});
+
+test("sendDailyReminders 43101 失败时暂停对应订阅并置暂停原因", async () => {
+  seed();
+  fakeCloud.openapi = { subscribeMessage: { send: async () => { const err = new Error("subscribeMessage.send:fail"); err.errCode = 43101; throw err; } } };
+  const db = fakeCloud.database();
+  db._rows("reminder_subscriptions").push({ _id: "rem-pause", openid: "admin", enabled: true, remindHour: 9, grantedCount: 5, sentCount: 0, familyId: "famA" });
+  const now = new Date("2026-09-03T01:00:00.000Z");
+  const result = await T.sendDailyReminders(now);
+  assert.equal(result.failed, 1);
+  const doc = db._rows("reminder_subscriptions").find((r) => r._id === "rem-pause");
+  assert.equal(doc.enabled, false);
+  assert.equal(doc.pausedReason, "no_quota");
 });

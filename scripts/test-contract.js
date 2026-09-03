@@ -434,3 +434,105 @@ test("getBillPreferences 无主档时从历史随机 id 文档迁移并读取", 
     account: "微信"
   });
 });
+
+test("searchBills 金额数字关键词按分区间匹配并隔离账本", async () => {
+  seed();
+  openid = "member";
+  db._rows("bills").push(
+    { _id: "bill-8855", familyId: "famA", type: "expense", amount: 8855, category1: "购物", category1Icon: "🛒", category2: "日用品", category2Icon: "🧴", account: "现金", date: "2026-06-02 12:00", memberOpenid: "member", memberId: "m-member", member: "成员", creatorOpenId: "member", deleted: false, version: 1, remark: "" },
+    { _id: "bill-885", familyId: "famA", type: "expense", amount: 885, category1: "餐饮", category1Icon: "🍜", category2: "午餐", category2Icon: "🍱", account: "现金", date: "2026-06-03 12:00", memberOpenid: "member", memberId: "m-member", member: "成员", creatorOpenId: "member", deleted: false, version: 1, remark: "" },
+    { _id: "bill-famb-88", familyId: "famB", type: "expense", amount: 8800, category1: "x", category1Icon: "x", category2: "y", category2Icon: "y", account: "a", date: "2026-06-04 12:00", memberOpenid: "outsider", memberId: "m-outsider", member: "外人", creatorOpenId: "outsider", deleted: false, version: 1, remark: "" }
+  );
+  const result = await invoke({ action: "searchBills", familyId: "famA", keyword: "88" });
+  assert.equal(result.success, true);
+  assert.ok(result.bills.some((b) => b._id === "bill-8855"), "88.55 应命中金额区间");
+  assert.equal(result.bills.some((b) => b._id === "bill-885"), false, "8.85 不应命中");
+  assert.equal(result.bills.some((b) => b._id === "bill-famb-88"), false, "其他账本不参与搜索");
+});
+
+test("searchBills 分页 limit 与 hasMore 边界", async () => {
+  seed();
+  openid = "admin";
+  for (let i = 0; i < 25; i += 1) {
+    db._rows("bills").push({ _id: "bill-s" + i, familyId: "famA", type: "expense", amount: 1000, category1: "餐饮", category1Icon: "🍜", category2: "午餐", category2Icon: "🍱", account: "现金", date: "2026-08-" + String(13 + i).padStart(2, "0") + " 12:00", memberOpenid: "member", memberId: "m-member", member: "成员", creatorOpenId: "member", deleted: false, version: 1, remark: "餐补" });
+  }
+  const page1 = await invoke({ action: "searchBills", familyId: "famA", keyword: "餐补", limit: 10 });
+  assert.equal(page1.success, true);
+  assert.equal(page1.bills.length, 10);
+  assert.equal(page1.hasMore, true);
+  const page2 = await invoke({ action: "searchBills", familyId: "famA", keyword: "餐补", limit: 10, offset: page1.offset });
+  assert.equal(page2.bills.length, 10);
+  const page3 = await invoke({ action: "searchBills", familyId: "famA", keyword: "餐补", limit: 10, offset: page2.offset });
+  assert.equal(page3.bills.length, 5);
+  assert.equal(page3.hasMore, false);
+});
+
+test("renameCategory 改名后批量更新本账本未删除账单", async () => {
+  seed();
+  openid = "admin";
+  db._rows("bills").push(
+    { _id: "bill-c1", familyId: "famA", type: "expense", amount: 1000, category1: "餐饮", category1Icon: "🍜", category2: "午餐", category2Icon: "🍱", account: "现金", date: "2026-08-13 12:00", memberOpenid: "member", memberId: "m-member", member: "成员", creatorOpenId: "member", deleted: false, version: 1 },
+    { _id: "bill-c2", familyId: "famA", type: "expense", amount: 2000, category1: "餐饮", category1Icon: "🍜", category2: "午餐", category2Icon: "🍱", account: "现金", date: "2026-08-13 12:00", memberOpenid: "member", memberId: "m-member", member: "成员", creatorOpenId: "member", deleted: true, version: 1 },
+    { _id: "bill-c3", familyId: "famA", type: "income", amount: 3000, category1: "工资", category1Icon: "💰", category2: "底薪", category2Icon: "💵", account: "现金", date: "2026-08-13 12:00", memberOpenid: "member", memberId: "m-member", member: "成员", creatorOpenId: "member", deleted: false, version: 1 }
+  );
+  const result = await invoke({ action: "renameCategory", familyId: "famA", categoryId: "c-eat", name: "美食", icon: "🍜" });
+  assert.equal(result.success, true);
+  const bills = db._rows("bills").filter((b) => b.familyId === "famA");
+  assert.equal(bills.find((b) => b._id === "bill-c1").category1, "美食", "有效账单应改名");
+  assert.equal(bills.find((b) => b._id === "bill-c1").category1Icon, "🍜", "图标应同步到账单");
+  assert.equal(bills.find((b) => b._id === "bill-c2").category1, "餐饮", "已删除账单不应被改");
+  assert.equal(bills.find((b) => b._id === "bill-c3").category1, "工资", "不同类型账单不受影响");
+  assert.ok(db._rows("operation_logs").some((log) => log.action === "category.rename" && log.summary.affectedBills === 3), "应报告受影响账单数（种子 2 + 新增 1）");
+});
+
+test("renameCategory 子级改名只更新对应二级分类账单", async () => {
+  seed();
+  openid = "admin";
+  db._rows("bills").push(
+    { _id: "bill-cl1", familyId: "famA", type: "expense", amount: 1000, category1: "餐饮", category1Icon: "🍜", category2: "午餐", category2Icon: "🍱", account: "现金", date: "2026-08-13 12:00", memberOpenid: "member", memberId: "m-member", member: "成员", creatorOpenId: "member", deleted: false, version: 1 },
+    { _id: "bill-cl2", familyId: "famA", type: "expense", amount: 2000, category1: "餐饮", category1Icon: "🍜", category2: "晚餐", category2Icon: "🍲", account: "现金", date: "2026-08-13 12:00", memberOpenid: "member", memberId: "m-member", member: "成员", creatorOpenId: "member", deleted: false, version: 1 }
+  );
+  const result = await invoke({ action: "renameCategory", familyId: "famA", categoryId: "c-lunch", name: "中饭" });
+  assert.equal(result.success, true);
+  const bills = db._rows("bills");
+  assert.equal(bills.find((b) => b._id === "bill-cl1").category2, "中饭");
+  assert.equal(bills.find((b) => b._id === "bill-cl2").category2, "晚餐", "其他二级分类不受影响");
+});
+
+test("renameAccount 批量更新使用该账户的未删除账单", async () => {
+  seed();
+  openid = "admin";
+  db._rows("bills").push(
+    { _id: "bill-a1", familyId: "famA", type: "expense", amount: 1000, category1: "餐饮", category1Icon: "🍜", category2: "午餐", category2Icon: "🍱", account: "现金", date: "2026-08-13 12:00", memberOpenid: "member", memberId: "m-member", member: "成员", creatorOpenId: "member", deleted: false, version: 1 },
+    { _id: "bill-a2", familyId: "famA", type: "expense", amount: 2000, category1: "餐饮", category1Icon: "🍜", category2: "午餐", category2Icon: "🍱", account: "现金", date: "2026-08-13 12:00", memberOpenid: "member", memberId: "m-member", member: "成员", creatorOpenId: "member", deleted: true, version: 1 }
+  );
+  const result = await invoke({ action: "renameAccount", familyId: "famA", accountId: "acc-cash", name: "钱包" });
+  assert.equal(result.success, true);
+  const bills = db._rows("bills");
+  assert.equal(bills.find((b) => b._id === "bill-a1").account, "钱包");
+  assert.equal(bills.find((b) => b._id === "bill-a2").account, "现金", "已删除账单不改");
+  assert.ok(db._rows("operation_logs").some((log) => log.action === "account.rename" && log.summary.affectedBills >= 3), "汇总应含种子 2 条 + 新增 1 条");
+});
+
+test("deleteCategory 有账单使用时停用而非删除；无使用时删除", async () => {
+  seed();
+  openid = "admin";
+  db._rows("bills").push({ _id: "bill-use", familyId: "famA", type: "expense", amount: 1000, category1: "餐饮", category1Icon: "🍜", category2: "午餐", category2Icon: "🍱", account: "现金", date: "2026-08-13 12:00", memberOpenid: "member", memberId: "m-member", member: "成员", creatorOpenId: "member", deleted: false, version: 1 });
+  const used = await invoke({ action: "deleteCategory", familyId: "famA", categoryId: "c-eat" });
+  assert.equal(used.success, true);
+  assert.equal(used.disabled, true);
+  assert.ok(db._rows("categories").some((c) => c._id === "c-eat"));
+  assert.equal((await invoke({ action: "deleteCategory", familyId: "famA", categoryId: "c-salary" })).success, true);
+  assert.equal(db._rows("categories").some((c) => c._id === "c-salary"), false, "无账单使用应物理删除");
+});
+
+test("deleteAccount 有账单使用时停用而非删除", async () => {
+  seed();
+  openid = "admin";
+  db._rows("bills").push({ _id: "bill-use", familyId: "famA", type: "expense", amount: 1000, category1: "餐饮", category1Icon: "🍜", category2: "午餐", category2Icon: "🍱", account: "现金", date: "2026-08-13 12:00", memberOpenid: "member", memberId: "m-member", member: "成员", creatorOpenId: "member", deleted: false, version: 1 });
+  db._rows("accounts").push({ _id: "acc-alipay", familyId: "famA", name: "支付宝", enabled: true });
+  const used = await invoke({ action: "deleteAccount", familyId: "famA", accountId: "acc-cash" });
+  assert.equal(used.success, true);
+  assert.equal(used.disabled, true);
+  assert.ok(db._rows("accounts").some((a) => a._id === "acc-cash"), "有账单使用时应停用而非物理删除");
+});

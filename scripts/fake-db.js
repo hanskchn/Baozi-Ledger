@@ -38,6 +38,13 @@ function applyUpdates(doc, data) {
 }
 
 function matchValue(docValue, cond) {
+  if (cond && typeof cond === "object" && cond.$regularExpression) {
+    try {
+      return new RegExp(cond.$regularExpression.pattern, cond.$regularExpression.options || "").test(String(docValue === undefined || docValue === null ? "" : docValue));
+    } catch (error) {
+      return false;
+    }
+  }
   if (cond && typeof cond === "object" && cond.__op) {
     switch (cond.__op) {
       case "gte": return docValue >= cond.v;
@@ -114,6 +121,9 @@ class FakeDB {
     this.command = makeCommand();
     this.collections = {};
     this._seq = 0;
+  }
+  RegExp({ regexp, options }) {
+    return { $regularExpression: { pattern: regexp || "", options: options || "" } };
   }
   createCollection(name) {
     if (!this.collections[name]) this.collections[name] = [];

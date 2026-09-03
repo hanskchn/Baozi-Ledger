@@ -1210,7 +1210,11 @@ const normalizeRemindHour = (value, fallback = 21) => {
   return REMINDER_HOURS.includes(hour) ? hour : fallback;
 };
 const padReminderPart = (value) => String(value).padStart(2, "0");
-const getBeijingNow = () => new Date(Date.now() + 8 * 60 * 60 * 1000);
+const getBeijingNow = (now = new Date()) => new Date(now.getTime() + 8 * 60 * 60 * 1000);
+// 定时任务性能参数：分页拉取每批条数 + 每时段硬上限（超出告警截断，避免无界循环） + 并发投递数
+const REMINDER_BATCH_SIZE = 500;
+const REMINDER_SUBS_HARD_CAP = 5000;
+const REMINDER_CONCURRENCY = 5;
 
 // thing 字段不支持 emoji 等特殊符号，账本名截断到 10 字符
 const sanitizeThingText = (value, maxLength) => {
@@ -1402,31 +1406,48 @@ const deliverReminderToUser = async (sub, ctx, overrides = {}) => {
   }
 };
 
-// 定时触发器入口：每天 09/13/21 点各跑一次，仅处理当前时段档位的用户
-const sendDailyReminders = async () => {
+// 分页拉取当前时段订阅：固定 _id 升序 + skip，读取期间不写库，结果集稳定不会跳号/重复。
+const collectReminderSubscribers = async (where, { batchSize = REMINDER_BATCH_SIZE, hardCap = REMINDER_SUBS_HARD_CAP } = {}) => {
+  const subs = [];
+  let truncated = false;
+  while (subs.length < hardCap) {
+    const want = Math.min(batchSize, hardCap - subs.length);
+    const page = await db.collection("reminder_subscriptions").where(where).orderBy("_id", "asc").skip(subs.length).limit(want).get();
+    subs.push(...page.data);
+    if (page.data.length < want) break;
+    truncated = subs.length >= hardCap;
+    if (truncated) break;
+  }
+  return { subs, truncated };
+};
+
+// 定时触发器入口：daily 09/13/21 点各跑一次，仅处理当前时段档位的用户；
+// 分批拉取 + 小并发投递，避免数百订阅用户串行 4-8 次 DB 往返逼近 60s 超时。
+const sendDailyReminders = async (now = new Date()) => {
   await ensureCollections();
-  const bj = getBeijingNow();
+  const bj = getBeijingNow(now);
   const ctx = buildReminderContext(bj);
   if (!REMINDER_HOURS.includes(ctx.hour)) return { success: true, skipped: "non_slot_hour", slot: ctx.hour };
-  const subs = await db.collection("reminder_subscriptions").where({ enabled: true, remindHour: ctx.hour }).limit(1000).get();
-  let sent = 0;
-  let skippedRecorded = 0;
-  let skippedNoQuota = 0;
-  let failed = 0;
-  for (const sub of subs.data) {
-    const outcome = await deliverReminderToUser(sub, ctx);
-    if (outcome.sent) { sent += 1; continue; }
-    if (outcome.skipped === "no_quota") { skippedNoQuota += 1; continue; }
-    if (outcome.skipped === "recorded_today") { skippedRecorded += 1; continue; }
-    if (outcome.skipped === "no_membership") continue;
-    if (outcome.error) {
-      failed += 1;
-      console.warn("每日记账提醒发送失败", sub.openid, outcome.error);
-      if (outcome.paused) await pauseReminderDoc(sub._id);
-    }
+  const { subs, truncated } = await collectReminderSubscribers({ enabled: true, remindHour: ctx.hour });
+  const counters = { sent: 0, skippedRecorded: 0, skippedNoQuota: 0, failed: 0, truncated };
+  if (truncated) console.warn("每日记账提醒订阅数超过硬上限，仅处理前 " + subs.length + " 条", { slot: ctx.hour, cap: REMINDER_SUBS_HARD_CAP });
+  for (let i = 0; i < subs.length; i += REMINDER_CONCURRENCY) {
+    const chunk = subs.slice(i, i + REMINDER_CONCURRENCY);
+    await Promise.all(chunk.map(async (sub) => {
+      const outcome = await deliverReminderToUser(sub, ctx);
+      if (outcome.sent) { counters.sent += 1; return; }
+      if (outcome.skipped === "no_quota") { counters.skippedNoQuota += 1; return; }
+      if (outcome.skipped === "recorded_today") { counters.skippedRecorded += 1; return; }
+      if (outcome.skipped === "no_membership") return;
+      if (outcome.error) {
+        counters.failed += 1;
+        console.warn("每日记账提醒发送失败", sub.openid, outcome.error);
+        if (outcome.paused) await pauseReminderDoc(sub._id);
+      }
+    }));
   }
-  console.log("每日记账提醒完成", { slot: ctx.hour, sent, skippedRecorded, skippedNoQuota, failed });
-  return { success: true, slot: ctx.hour, sent, skippedRecorded, skippedNoQuota, failed };
+  console.log("每日记账提醒完成", { slot: ctx.hour, scanned: subs.length, ...counters });
+  return { success: true, slot: ctx.hour, scanned: subs.length, ...counters };
 };
 
 // ==================== 提醒调试工具（仅开发者） ====================
@@ -1649,6 +1670,8 @@ if (typeof module !== "undefined") {
     sanitizeAvatarUrl,
     toClientErrorMessage,
     assertInviteRateLimit,
-    isTimerTrigger
+    isTimerTrigger,
+    collectReminderSubscribers,
+    sendDailyReminders
   };
 }

@@ -183,3 +183,33 @@ test("confirmImport 100 条账单能在合理时间内完成（批量并发优�
   console.log("  100 条账单批量导入耗时: " + duration + "ms");
   assert.ok(duration < 10000, "100 条账单应在 10s 内完成（实测 " + duration + "ms）");
 });
+
+test("confirmImport 分批导入共享 batchId 并可整批回滚", async () => {
+  seed(); openid = "admin";
+  stubRows = [row({ 日期: "2026-08-01 12:00", 备注: "第1笔" }), row({ 日期: "2026-08-02 12:00", 备注: "第2笔" }), row({ 日期: "2026-08-03 12:00", 备注: "第3笔" })];
+  const first = await invoke({ action: "confirmImport", familyId: "famA", fileID: "file1", offset: 0, batchSize: 2 });
+  assert.equal(first.success, true);
+  assert.equal(first.imported, 2);
+  assert.ok(first.batchId, "首包应返回服务端生成 batchId");
+  assert.equal(first.remaining, 1, "应报告剩余行数");
+  const second = await invoke({ action: "confirmImport", familyId: "famA", fileID: "file1", offset: 2, batchSize: 2, batchId: first.batchId });
+  assert.equal(second.success, true);
+  assert.equal(second.imported, 1);
+  assert.equal(second.batchId, first.batchId, "续批应沿用同一 batchId");
+  assert.equal(second.remaining, 0);
+  const db = fakeCloud.database();
+  const active = db._rows("bills").filter((b) => b.familyId === "famA" && !b.deleted);
+  assert.equal(active.length, 3, "两批合计应导入 3 条");
+  const rollback = await invoke({ action: "rollbackImport", familyId: "famA", batchId: first.batchId });
+  assert.equal(rollback.success, true);
+  assert.equal(rollback.removed, 3, "共享 batchId 应一次撤销全部批次");
+  assert.equal(db._rows("bills").filter((b) => b.familyId === "famA" && !b.deleted).length, 0);
+});
+
+test("confirmImport 未显式分批时整包导入不受 500 上限影响（兼容老客户端）", async () => {
+  seed(); openid = "admin";
+  stubRows = Array.from({ length: 600 }, (_, i) => row({ 日期: "2026-08-01 12:00", 金额: String(10 + (i % 90)) + ".00", 商家: "批" + i }));
+  const result = await invoke({ action: "confirmImport", familyId: "famA", fileID: "file1" });
+  assert.equal(result.success, true);
+  assert.equal(result.imported, 600, "不带 batchSize 时应保持整包导入");
+});
