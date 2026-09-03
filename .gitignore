@@ -24,3 +24,6 @@ npm-debug.log*
 # 临时文件
 *.tmp
 *.temp
+
+# 云端函数下载临时目录
+/tmp-dl/
