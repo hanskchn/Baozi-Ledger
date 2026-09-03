@@ -620,10 +620,17 @@ const searchBills = async (event) => {
   for (const range of buildAmountSearchCents(lower)) {
     conditions.push({ amount: db.command.gte(range.start).and(db.command.lte(range.end)) });
   }
+  // 与 listBills 同一套已被线上验证的查询形态：单字段排序（复合 orderBy 需预先建索引，
+  // 未建会整体报错被误认为“搜不到”）、limit 不超过 20。
+  const maxPage = Math.min(limit, SEARCH_BILL_PAGE_SIZE);
   const result = await db.collection("bills").where({ familyId: event.familyId, deleted: false, $or: conditions })
-    .orderBy("date", "desc").orderBy("_id", "desc").skip(offset).limit(limit + 1).get();
-  const pageData = result.data.slice(0, limit);
-  const hasMore = result.data.length > limit;
+    .orderBy("date", "desc").skip(offset).limit(maxPage).get();
+  // 数据库内复核：极端情况下若金额区间条件语义偏差，兜底剔除不会误返回无关账单。
+  const pageData = result.data.filter((bill) => {
+    if (SEARCH_TEXT_FIELDS.some((field) => String(bill[field] || "").toLowerCase().includes(lower))) return true;
+    return buildAmountSearchCents(lower).some((range) => Number(bill.amount) >= range.start && Number(bill.amount) <= range.end);
+  });
+  const hasMore = result.data.length === maxPage;
   const visibleBills = (await anonymizeCancelledBillMembers(event.familyId, pageData)).map(projectBill);
   return { success: true, bills: visibleBills, hasMore, offset: offset + pageData.length };
 };
