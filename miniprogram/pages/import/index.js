@@ -2,7 +2,7 @@ const app = getApp();
 const brand = require("../../utils/brand");
 
 Page({
-  data: { fileName: "", fileID: "", previewData: [], memberMappings: [], importing: false, previewing: false, familyId: "", total: 0, lastBatchId: "", hasBrandAssets: brand.available,
+  data: { fileName: "", fileID: "", previewData: [], memberMappings: [], importing: false, previewing: false, familyId: "", total: 0, lastBatchId: "", hasBrandAssets: brand.available, importProgress: null,
     invalidList: [],
     downloadingTemplate: false,
     emptyImageFailed: false, doneImageFailed: false },
@@ -48,10 +48,14 @@ Page({
     let imported = 0;
     let importedExpense = 0;
     let importedIncome = 0;
+    const updateProgress = (done) => {
+      const doneCount = Math.min(done, total);
+      this.setData({ importProgress: { done: doneCount, total, percent: total > 0 ? Math.round((doneCount / total) * 100) : 0 } });
+    };
     try {
       for (let batchIndex = 0; batchIndex < batchCount; batchIndex += 1) {
         const offset = batchIndex * BATCH_SIZE;
-        wx.showLoading({ title: "导入中 " + Math.min(offset + BATCH_SIZE, total) + "/" + total, mask: true });
+        updateProgress(offset + BATCH_SIZE);
         const result = await this.call("confirmImport", {
           familyId: this.data.familyId,
           fileID: this.data.fileID,
@@ -64,7 +68,6 @@ Page({
         importedExpense += result.importedExpense || 0;
         importedIncome += result.importedIncome || 0;
       }
-      wx.hideLoading();
       const invalidCount = (this.data.invalidList || []).length;
       const lines = [];
       if (importedExpense + importedIncome > 0) {
@@ -79,7 +82,6 @@ Page({
       // 保留 total / validCount / invalidList —— 导入成功后用户仍要看到本次解析汇总（尤其是无效行明细）
       this.setData({ fileName: "", fileID: "", previewData: [], memberMappings: [], lastBatchId: batchId, invalidList: this.data.invalidList || [] });
     } catch (error) {
-      wx.hideLoading();
       if (error.batchId) {
         this.setData({ lastBatchId: error.batchId, fileName: "", fileID: "" });
         const partial = imported + (error.imported || 0);
@@ -98,5 +100,6 @@ Page({
   },
   async call(action, data) { const response = await wx.cloud.callFunction({ name: "accountingFunctions", data: { ...data, action } }); if (!response.result?.success) { const err = new Error(response.result?.message || "操作失败"); err.batchId = response.result?.batchId || ""; err.imported = response.result?.imported; throw err; } return response.result; },
   onEmptyImageError() { this.setData({ emptyImageFailed: true }); },
-  onDoneImageError() { this.setData({ doneImageFailed: true }); }
+  onDoneImageError() { this.setData({ doneImageFailed: true }); },
+  noopProgress() {}
 });

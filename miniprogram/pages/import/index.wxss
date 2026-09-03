@@ -177,3 +177,76 @@
 .empty-illustration { width: 160rpx; height: 128rpx; }
 .empty-mark { width: 120rpx; height: 104rpx; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: #FFF1D6; border: 2rpx solid #F6B84C; font-size: 48rpx; }
 .done-text { margin-top: 16rpx; color: #8D6E63; font-size: 26rpx; }
+
+/* 导入进度浮层（替代系统 showLoading，避免进度文字被截断） */
+.import-mask {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+
+.import-card {
+  width: 500rpx;
+  background: #FFFFFF;
+  border-radius: 20rpx;
+  padding: 48rpx 40rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.15);
+}
+
+.import-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #4E342E;
+}
+
+.import-number {
+  margin-top: 24rpx;
+  font-size: 64rpx;
+  font-weight: 700;
+  color: #D96A23;
+  line-height: 1.2;
+}
+
+.import-total {
+  font-size: 32rpx;
+  font-weight: 500;
+  color: #8D6E63;
+}
+
+.import-track {
+  margin-top: 24rpx;
+  width: 100%;
+  height: 16rpx;
+  background: #F0E6DC;
+  border-radius: 8rpx;
+  overflow: hidden;
+}
+
+.import-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #F6B84C, #D96A23);
+  border-radius: 8rpx;
+  transition: width 0.3s ease;
+}
+
+.import-percent {
+  margin-top: 12rpx;
+  font-size: 26rpx;
+  color: #8D6E63;
+}
+
+.import-tip {
+  margin-top: 28rpx;
+  font-size: 24rpx;
+  color: #A1887F;
+}

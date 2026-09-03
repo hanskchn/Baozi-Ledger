@@ -46,5 +46,16 @@
   <button class="save-btn" wx:if="{{previewData.length > 0}}" bindtap="confirmImport" loading="{{importing}}">确认导入</button>
   <view class="done-state" wx:if="{{lastBatchId && previewData.length === 0 && !fileName}}"><image wx:if="{{hasBrandAssets && !doneImageFailed}}" class="empty-illustration" src="/images/brand/import-done.png" mode="aspectFit" binderror="onDoneImageError"></image><view wx:else class="empty-mark">✅</view><text class="done-text">导入完成，可查看账单或继续导入</text></view>
   <button class="btn-outline" wx:if="{{lastBatchId}}" bindtap="rollbackLastImport">撤销刚刚导入</button>
-<privacy-popup />
+  <view class="import-mask" wx:if="{{importing}}" catchtouchmove="noopProgress">
+    <view class="import-card">
+      <text class="import-title">正在导入账单</text>
+      <text class="import-number" wx:if="{{importProgress}}">{{importProgress.done}}<text class="import-total"> / {{importProgress.total}}</text></text>
+      <view class="import-track" wx:if="{{importProgress}}">
+        <view class="import-bar" style="width: {{importProgress.percent}}%"></view>
+      </view>
+      <text class="import-percent" wx:if="{{importProgress}}">已完成 {{importProgress.percent}}%</text>
+      <text class="import-tip">大文件分批提交中，请勿退出页面</text>
+    </view>
+  </view>
+  <privacy-popup />
 </view>
