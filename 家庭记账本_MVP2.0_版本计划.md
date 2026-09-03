@@ -227,6 +227,10 @@
 | 2026-09-03 | resetTestData（2.3 KB） | 目标 1 安全加固 | 同上 | ✅ 部署成功（IDE CLI） | 清除需显式 `confirm:true`；测试工具页验证 |
 | 2026-09-03（补丁） | ledgerFunctions（38.4 KB） | 邀请限流升级为数据库全局计数，修复多实例绕过 | `npm test` 91 项零回归 + `verify` 13 步存量 3 告警 | ✅ 部署成功（IDE CLI） | `rate_limits` 集合新引入；13 次连续调用第 13 次应拒绝 |
 | 2026-09-03（补丁） | resetTestData（2.3 KB） | `ALL_COLLECTIONS` 纳入 `rate_limits` | 同上 | ✅ 部署成功（IDE CLI） | 测试环境清除数据时联动清理限流计数 |
+| 2026-09-03（目标 5 统一部署） | ledgerFunctions（39.0 KB） | 目标 1-4 全量代码上线（安全加固、测试清零后的稳定版本） | `npm test` 115 项 0 失败 + `verify` 13 步 0 告警 | ✅ 部署成功（IDE CLI） | 待回归 9/13/21 定时提醒与 43101 续订 |
+| 2026-09-03（目标 5 统一部署） | accountingFunctions（40.3 KB） | 同上（含目标 2 搜索/批量/导入分批全量） | 同上 | ✅ 部署成功（IDE CLI） | 云端回归清单执行中 |
+| 2026-09-03（目标 5 统一部署） | feedbackFunctions（21.9 KB） | whoami 只下发身份尾号（目标 4 敏感字段清零） | 同上 | ✅ 部署成功（IDE CLI） | 前端身份ID展示尾 8 位 |
+| 2026-09-03（目标 5 统一部署） | resetTestData（19.6 KB） | 锁文件与 SDK 统一 ~2.4.0（目标 4 Q7） | 同上 | ✅ 部署成功（IDE CLI） | 需显式 `confirm:true` 才清空 |
 | 2026-09-03（补丁） | accountingFunctions（38.4 KB） | 偏好校验改为对象形状白名单（原只允许字符串导致前端偏好被拒） | `npm test` 92 项零回归 + `verify` 13 步存量 3 告警 | ✅ 部署成功（IDE CLILI） | 复测：记类别保存→重启→最近使用恢复 |
 | 2026-09-03（补丁2） | accountingFunctions（38.7 KB） | 写读偏好收敛到单一确定性主档，修复历史随机 id 文档并存导致读回旧值 | `npm test` 94 项零回归 + `verify` 13 步存量 3 告警 | ✅ 部署成功（IDE CLI） | 复测：收入态保存后立即读回应为新值 |
 | 2026-09-03 | ledgerFunctions（39.0 KB） | 目标 2 性能还债：每日提醒分页 500/批 + 5 并发 + 5000 硬上限保护 | `npm test` 108 项（存量 7 零回归）+ `verify` 13 步（存量 3 记录在案） | ✅ 部署成功（IDE CLI） | 分两份部署时需逐个函数名执行（IDE CLI 不支持逗号列表） |
