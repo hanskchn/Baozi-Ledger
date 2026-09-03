@@ -178,13 +178,18 @@ test("sanitizeAccountPreference 仅接受短文本账户", () => {
   assert.throws(() => T.sanitizeAccountPreference({ name: "现金" }));
 });
 
-test("buildAmountSearchCents 金额关键词转分区间近似", () => {
-  assert.deepEqual(T.buildAmountSearchCents("88"), { start: 8800, end: 8899 });
-  assert.deepEqual(T.buildAmountSearchCents("88.5"), { start: 8850, end: 8859 });
-  assert.deepEqual(T.buildAmountSearchCents("88.56"), { start: 8856, end: 8856 });
-  assert.deepEqual(T.buildAmountSearchCents("0.5"), { start: 50, end: 59 });
-  assert.deepEqual(T.buildAmountSearchCents("9999999.99"), { start: 999999999, end: 999999999 });
-  assert.equal(T.buildAmountSearchCents("abc"), null);
-  assert.equal(T.buildAmountSearchCents("12.345"), null);
-  assert.equal(T.buildAmountSearchCents("88.56元"), null);
+test("buildAmountSearchCents 金额关键词转分区间集合", () => {
+  const R = T.buildAmountSearchCents;
+  assert.ok(R("88").some((x) => x.start === 8800 && x.end === 8899), "88 应含 88.00-88.99 元");
+  assert.ok(R("88").some((x) => x.start === 88000 && x.end === 88999), "88 应含 880-889 元");
+  assert.ok(R("8").some((x) => x.start === 800 && x.end === 899), "8 应含 8.00-8.99 元");
+  assert.ok(R("8").some((x) => x.start === 8000 && x.end === 8999), "8 应覆盖 80-89 元档（88 元账单可命中）");
+  assert.ok(R("8").some((x) => x.start === 800000 && x.end === 899999), "8 应覆盖 8000-8999 元档");
+  assert.deepEqual(R("88.5"), [{ start: 8850, end: 8859 }]);
+  assert.deepEqual(R("88.56"), [{ start: 8856, end: 8856 }]);
+  assert.deepEqual(R("0.5"), [{ start: 50, end: 59 }]);
+  assert.deepEqual(R("9999999.99"), [{ start: 999999999, end: 999999999 }]);
+  assert.deepEqual(R("abc"), []);
+  assert.deepEqual(R("12.345"), []);
+  assert.deepEqual(R("88.56元"), []);
 });

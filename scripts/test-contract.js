@@ -446,8 +446,12 @@ test("searchBills 金额数字关键词按分区间匹配并隔离账本", async
   const result = await invoke({ action: "searchBills", familyId: "famA", keyword: "88" });
   assert.equal(result.success, true);
   assert.ok(result.bills.some((b) => b._id === "bill-8855"), "88.55 应命中金额区间");
-  assert.equal(result.bills.some((b) => b._id === "bill-885"), false, "8.85 不应命中");
+  assert.equal(result.bills.some((b) => b._id === "bill-885"), false, "8.85 不在 88 元档区间");
   assert.equal(result.bills.some((b) => b._id === "bill-famb-88"), false, "其他账本不参与搜索");
+  const single = await invoke({ action: "searchBills", familyId: "famA", keyword: "8" });
+  assert.ok(single.bills.some((b) => b._id === "bill-8855"), "搜 8 应命中 88 元档（80-89 元区间）");
+  assert.ok(single.bills.some((b) => b._id === "bill-885"), "搜 8 应命中 8.85 元账单");
+  assert.equal(single.bills.some((b) => b._id === "bill-famb-88"), false, "账本隔离不受金额区间影响");
 });
 
 test("searchBills 分页 limit 与 hasMore 边界", async () => {

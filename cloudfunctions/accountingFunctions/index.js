@@ -583,17 +583,29 @@ const getBudgetPageData = async (event) => {
 // ==================== 搜索（P1 数据库级过滤 + 分页） ====================
 // 旧实现把整本账单拉回内存过滤，账单数万条后必超时；改为 where + $or（正则转义）在数据库
 // 侧过滤，只把匹配分页取回。金额是“分”整数存库，数据库无法对数字做子串匹配，纯数字关键词
-// 统一收敛为“格式化金额前缀”区间近似（如 "88"→88.00-88.99）；发票级精确匹配仍走文本字段。
+// 统一收敛为“整数部分以关键词开头”的区间集合（如 "8"→8、80-89、800-899…，覆盖 88 元档）；
+// “含小数”关键词按格式化金额前缀精确区间（"88.5"→[8850,8859]）。文本字段仍走 db.RegExp。
 const SEARCH_TEXT_FIELDS = ["remark", "merchant", "category1", "category2", "member", "account"];
 const SEARCH_BILL_PAGE_SIZE = 20;
 const SEARCH_BILL_PAGE_MAX = 50;
-// “元”文本 → 分 区间：如 "88"→[8800,8899]、"88.5"→[8850,8859]、"88.56"→[8856,8856]
+// “元”文本 → 分区间列表：整数关键词按“整数部分以 N 开头”展开最多 7 档；带小数则精确到分位。
 const buildAmountSearchCents = (keyword) => {
-  if (!/^\d{1,7}(?:\.\d{1,2})?$/.test(keyword)) return null;
+  if (!/^\d{1,7}(?:\.\d{1,2})?$/.test(keyword)) return [];
   const [yuanPart, decPart = ""] = keyword.split(".");
-  const start = Number(yuanPart) * 100 + Number(decPart.padEnd(2, "0").slice(0, 2));
-  const span = decPart.length === 0 ? 99 : decPart.length === 1 ? 9 : 0;
-  return { start, end: start + span };
+  const ranges = [];
+  const yuan = Number(yuanPart);
+  if (decPart === "") {
+    for (let suffix = 0; suffix + yuanPart.length <= 7 && (yuan + 1) * 10 ** suffix * 100 - 1 <= MAX_BILL_AMOUNT_CENTS; suffix += 1) {
+      const start = yuan * 10 ** suffix * 100;
+      const end = (yuan + 1) * 10 ** suffix * 100 - 1;
+      ranges.push({ start, end });
+    }
+  } else {
+    const start = yuan * 100 + Number(decPart.padEnd(2, "0").slice(0, 2));
+    const span = decPart.length === 1 ? 9 : 0;
+    ranges.push({ start, end: start + span });
+  }
+  return ranges;
 };
 
 const searchBills = async (event) => {
@@ -605,8 +617,9 @@ const searchBills = async (event) => {
   const lower = keyword.toLowerCase();
   const escaped = escapeRegExp(lower);
   const conditions = SEARCH_TEXT_FIELDS.map((field) => ({ [field]: db.RegExp({ regexp: escaped, options: "i" }) }));
-  const amountRange = buildAmountSearchCents(lower);
-  if (amountRange) conditions.push({ amount: db.command.gte(amountRange.start).and(db.command.lte(amountRange.end)) });
+  for (const range of buildAmountSearchCents(lower)) {
+    conditions.push({ amount: db.command.gte(range.start).and(db.command.lte(range.end)) });
+  }
   const result = await db.collection("bills").where({ familyId: event.familyId, deleted: false, $or: conditions })
     .orderBy("date", "desc").orderBy("_id", "desc").skip(offset).limit(limit + 1).get();
   const pageData = result.data.slice(0, limit);

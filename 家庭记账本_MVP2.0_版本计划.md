@@ -231,6 +231,7 @@
 | 2026-09-03（补丁2） | accountingFunctions（38.7 KB） | 写读偏好收敛到单一确定性主档，修复历史随机 id 文档并存导致读回旧值 | `npm test` 94 项零回归 + `verify` 13 步存量 3 告警 | ✅ 部署成功（IDE CLI） | 复测：收入态保存后立即读回应为新值 |
 | 2026-09-03 | ledgerFunctions（39.0 KB） | 目标 2 性能还债：每日提醒分页 500/批 + 5 并发 + 5000 硬上限保护 | `npm test` 108 项（存量 7 零回归）+ `verify` 13 步（存量 3 记录在案） | ✅ 部署成功（IDE CLI） | 分两份部署时需逐个函数名执行（IDE CLI 不支持逗号列表） |
 | 2026-09-03 | accountingFunctions（39.8 KB） | 目标 2 性能还债：searchBills 数据库级过滤分页、分类/账户改名与删除改 `where().update`/limit、导入分批（同 batchId 整批可回滚） | 同上 | ✅ 部署成功（IDE CLI） | `buildVersion` 更新为 `2026-09-03-p2-perf-search-batch` |
+| 2026-09-03（补丁） | accountingFunctions（40.0 KB） | 金额搜索扩为“整数部分以关键词开头”多档区间：搜 “8” 可命中 8.00-8.99 / 80-89 / 800-899 等档位，修复搜 “8” 无结果 | `npm test` 108 项零回归 + `verify` 13 步存量 3 告警 | ✅ 部署成功（IDE CLI） | 验证：账单页搜 8 应出现 88 元档账单 |
 
 ---
 
