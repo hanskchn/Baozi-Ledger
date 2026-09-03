@@ -312,8 +312,9 @@ Page({
     const familyId = app.globalData.currentFamilyId;
     if (!familyId) return;
     // 10 分钟内有缓存就不重复请求
+    let cached = null;
     try {
-      const cached = wx.getStorageSync("formOptions:" + familyId);
+      cached = wx.getStorageSync("formOptions:" + familyId);
       if (cached && cached.ts && Date.now() - cached.ts < 5 * 60 * 1000) return;
     } catch (e) {}
     const resp = await wx.cloud.callFunction({
@@ -331,7 +332,8 @@ Page({
         incomeCategories: catIncome,
         accounts: resp.result.accounts || [],
         members: resp.result.members || [],
-        preferences: null
+        // 首页预载仅同步分类/账户/成员，保留已有偏好记忆，避免覆盖最近使用
+        preferences: cached ? cached.preferences : null
       });
     } catch (e) {}
   },
