@@ -70,7 +70,8 @@ const sanitizeSystemInfo = (info) => {
 // 返回当前调用者身份，用于前端判断是否显示「反馈管理」入口
 const whoami = async () => {
   const openid = getOpenid();
-  return ok({ openid, isDeveloper: isDeveloper(openid) });
+  // 只下发身份尾段，完整 openid 不下发到前端（S9 收敛口径，前端无 shell openid 残留）
+  return ok({ identity: openid.slice(-8), isDeveloper: isDeveloper(openid) });
 };
 
 // 提交反馈

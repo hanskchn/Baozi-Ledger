@@ -1,4 +1,5 @@
 const app = getApp();
+const { callFunction } = require("../../utils/api.js");
 
 
 const EXPENSE_ICON_GROUPS = [
@@ -270,11 +271,6 @@ Page({
   },
 
   async call(action, data) {
-    const response = await wx.cloud.callFunction({
-      name: "accountingFunctions",
-      data: { ...data, action }
-    });
-    if (!response.result?.success) throw new Error(response.result?.message || "操作失败");
-    return response.result;
+    return callFunction("accountingFunctions", action, data);
   }
 });

@@ -199,12 +199,15 @@ class FakeDB {
       // 聚合管道：match().group().end() 返回 { list }
       aggregate() {
         const pipeline = [];
+        let limitN = null;
         return {
           match(cond) { pipeline.push({ $match: cond }); return this; },
           group(spec) { pipeline.push({ $group: spec }); return this; },
+          limit(n) { limitN = n; return this; },
           async end() {
             const rows = self._rows(name).slice();
-            return { list: runAggregatePipeline(rows, pipeline) };
+            const list = runAggregatePipeline(rows, pipeline);
+            return { list: limitN != null ? list.slice(0, limitN) : list };
           }
         };
       }

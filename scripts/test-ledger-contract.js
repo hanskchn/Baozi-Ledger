@@ -37,6 +37,17 @@ function seed({ members = 1, inviteExpiresAt = FUTURE } = {}) {
 
 const invoke = (event) => m.main(event);
 
+// 注销意图需服务端 users 文档（目标1 安全语义：forceLastFamily 只认服务端意图）
+const seedUsers = async (db, openid) => {
+  await db.collection("users").doc(T.getStableUserId(openid)).set({ data: { openid, nickName: "测试用户" } });
+};
+
+// 给管理员再造一个账本，用于“非唯一账本”场景
+const seedSecondFamily = (db) => {
+  db.collection("families").doc("famB").set({ data: { name: "家庭B", adminOpenid: "admin", status: "active", activeMemberCount: 0, membershipRevision: 1 } });
+  db._rows("family_members").push({ _id: "m-admin-b", familyId: "famB", openid: "admin", nickName: "管理员", role: "admin", status: "active", joinedAt: new Date() });
+};
+
 before(() => { seed(); });
 
 test("transferAdmin 管理员不能转让给自己", async () => {
@@ -130,21 +141,40 @@ test("createInvite 仅管理员", async () => {
   assert.match(result.message, /只有管理员/);
 });
 
-test("leaveFamily 管理员不能退出，须先转让", async () => {
+test("leaveFamily 唯一账本的管理员不能退出", async () => {
   seed({ members: 1 });
   openid = "admin";
   const result = await invoke({ action: "leaveFamily", familyId: "famA" });
   assert.equal(result.success, false);
-  assert.match(result.message, /管理员请先转让/);
+  assert.match(result.message, /你至少需要保留一个账本/);
 });
 
-test("dissolveFamily 仅管理员且无其他成员时可解散并收敛状态", async () => {
+test("leaveFamily 管理员有多个账本时不能直接退出", async () => {
+  const db = seed({ members: 1 });
+  seedSecondFamily(db);
+  openid = "admin";
+  const result = await invoke({ action: "leaveFamily", familyId: "famA" });
+  assert.equal(result.success, false);
+  assert.match(result.message, /管理员请先转让管理权/);
+});
+
+test("dissolveFamily 唯一账本无注销意图时被拒", async () => {
   seed({ members: 0 });
   openid = "admin";
   const result = await invoke({ action: "dissolveFamily", familyId: "famA" });
+  assert.equal(result.success, false);
+  assert.match(result.message, /你至少需要保留一个账本/);
+});
+
+test("dissolveFamily 唯一账本配注销意图可解散并收敛状态", async () => {
+  const db = seed({ members: 0 });
+  await seedUsers(db, "admin");
+  openid = "admin";
+  const begin = await invoke({ action: "beginAccountCancellation" });
+  assert.equal(begin.success, true);
+  const result = await invoke({ action: "dissolveFamily", familyId: "famA", forceLastFamily: true });
   assert.equal(result.success, true);
   assert.equal(result.alreadyDissolved, false);
-  const db = fakeCloud.database();
   const family = db._rows("families").find((f) => f._id === "famA");
   assert.equal(family.status, "dissolved");
   assert.equal(family.activeMemberCount, 0);
@@ -154,19 +184,23 @@ test("dissolveFamily 仅管理员且无其他成员时可解散并收敛状态",
   assert.equal(invite.status, "revoked");
 });
 
-test("dissolveFamily 有其他成员时被拒", async () => {
-  seed({ members: 1 });
+test("dissolveFamily 非唯一账本可直接解散且有成员在场也整家收敛", async () => {
+  const db = seed({ members: 1 });
+  seedSecondFamily(db);
   openid = "admin";
   const result = await invoke({ action: "dissolveFamily", familyId: "famA" });
-  assert.equal(result.success, false);
-  assert.match(result.message, /请先转让管理员/);
+  assert.equal(result.success, true);
+  const member = db._rows("family_members").find((x) => x._id === "m-member");
+  assert.equal(member.status, "dissolved");
 });
 
 test("dissolveFamily 已解散幂等返回", async () => {
-  seed({ members: 0 });
+  const db = seed({ members: 0 });
+  await seedUsers(db, "admin");
   openid = "admin";
-  await invoke({ action: "dissolveFamily", familyId: "famA" });
-  const again = await invoke({ action: "dissolveFamily", familyId: "famA" });
+  await invoke({ action: "beginAccountCancellation" });
+  await invoke({ action: "dissolveFamily", familyId: "famA", forceLastFamily: true });
+  const again = await invoke({ action: "dissolveFamily", familyId: "famA", forceLastFamily: true });
   assert.equal(again.success, true);
   assert.equal(again.alreadyDissolved, true);
 });

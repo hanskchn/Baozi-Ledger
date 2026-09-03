@@ -42,7 +42,7 @@
 
     <button class="submit-btn" bindtap="submit" loading="{{submitting}}" disabled="{{submitting}}">提交反馈</button>
     <view class="tips">系统会自动附加机型、微信版本和当前页面，帮助我们更快定位问题</view>
-    <view class="dev-id" bindtap="copyOpenid" wx:if="{{openid}}">身份ID：{{openidShort}}（点击复制）</view>
+    <view class="dev-id" bindtap="copyIdentity" wx:if="{{identity}}">身份ID：{{identity}}（点击复制）</view>
   </view>
 
   <view wx:if="{{activeTab === 'mine'}}" class="tab-body">

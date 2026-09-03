@@ -1,5 +1,6 @@
 const app = getApp();
 const brand = require("../../utils/brand");
+const { callFunction } = require("../../utils/api.js");
 
 Page({
   data: { keyword: "", results: [], loading: false, loadingMore: false, hasMore: true, offset: 0, familyId: "", hasBrandAssets: brand.available, emptyImageFailed: false },
@@ -26,6 +27,6 @@ Page({
   onReachBottom() { if (this.data.hasMore && !this.data.loading && !this.data.loadingMore && this.data.results.length) this.search(true); },
   async onPullDownRefresh() { await this.search(false); wx.stopPullDownRefresh(); },
   onItemTap(event) { wx.navigateTo({ url: "/pages/billDetail/index?id=" + event.currentTarget.dataset.id }); },
-  async call(action, data) { const response = await wx.cloud.callFunction({ name: "accountingFunctions", data: { ...data, action } }); if (!response.result?.success) throw new Error(response.result?.message || "操作失败"); return response.result; },
+  call(action, data) { return callFunction("accountingFunctions", action, data); },
   onEmptyImageError() { this.setData({ emptyImageFailed: true }); }
 });

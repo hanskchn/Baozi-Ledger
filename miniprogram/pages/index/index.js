@@ -1,4 +1,5 @@
 const app = getApp();
+const { resolveSwipeDirection, swipeOffsetRpx } = require("../../utils/swipe.js");
 
 const formatBudget = (raw) => {
   if (!raw) return null;
@@ -631,27 +632,19 @@ Page({
     const touch = e.touches[0];
     const deltaX = touch.clientX - this._swipeStartX;
     const deltaY = touch.clientY - this._swipeStartY;
-    // 首次移动时判断方向，纵向滚动则放弃横向滑动
     if (!this._dragDirection) {
-      if (Math.abs(deltaX) < 6 && Math.abs(deltaY) < 6) return;
-      if (Math.abs(deltaY) > Math.abs(deltaX)) {
-        this._dragDirection = "vertical";
-        this._swipeBillId = null;
-        return;
-      }
-      this._dragDirection = "horizontal";
+      const direction = resolveSwipeDirection(deltaX, deltaY);
+      if (direction === null) return;
+      this._dragDirection = direction;
+      if (direction === "vertical") { this._swipeBillId = null; return; }
       this._isDragging = true;
     }
     if (this._dragDirection !== "horizontal") return;
-    // 转换为 rpx 近似值（750rpx = 屏幕宽度）
     const sysInfo = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync();
     const rpxRatio = 750 / sysInfo.windowWidth;
-    let offsetRpx = this._swipeBaseX + deltaX * rpxRatio;
-    // 限制范围：0 到 -180，略加超出回弹的手感
-    if (offsetRpx > 0) offsetRpx = offsetRpx * 0.2;
-    if (offsetRpx < -220) offsetRpx = -220 + (offsetRpx + 220) * 0.2;
+    const offsetRpx = swipeOffsetRpx(this._swipeBaseX, deltaX, rpxRatio);
     const map = {};
-    map[billId] = Math.round(offsetRpx);
+    map[billId] = offsetRpx;
     this.setData({ swipeOffsetMap: Object.assign({}, this.data.swipeOffsetMap, map) });
   },
 

@@ -1,5 +1,7 @@
 const app = getApp();
 const { debounce, throttle } = require("../../utils/perf");
+const { callFunction } = require("../../utils/api.js");
+const { resolveSwipeDirection, swipeOffsetRpx } = require("../../utils/swipe.js");
 
 const BILLS_CACHE_TTL_MS = 60 * 1000;
 
@@ -134,10 +136,7 @@ Page({
     try {
       const familyId = app.globalData.currentFamilyId;
       if (!familyId) return;
-      const res = await wx.cloud.callFunction({
-        name: "accountingFunctions",
-        data: { action: "listFormOptions", familyId }
-      });
+      const res = await callFunction("accountingFunctions", "listFormOptions", { familyId });
       this.setData({
         categories: res.result?.categories || [],
         members: res.result?.members || [],
@@ -527,11 +526,7 @@ Page({
     });
   },
 
-  async callFunction(type, data = {}) {
-    const response = await wx.cloud.callFunction({ name: "accountingFunctions", data: { ...data, action: type } });
-    if (!response.result || !response.result.success) throw new Error(response.result?.message || "操作失败");
-    return response.result;
-  },
+  callFunction(type, data = {}) { return callFunction("accountingFunctions", type, data); },
 
   goSearch() {
     wx.navigateTo({ url: "/pages/search/index" });
@@ -576,19 +571,18 @@ Page({
     const deltaX = touch.clientX - this._swipeStartX;
     const deltaY = touch.clientY - this._swipeStartY;
     if (!this._dragDirection) {
-      if (Math.abs(deltaX) < 6 && Math.abs(deltaY) < 6) return;
-      if (Math.abs(deltaY) > Math.abs(deltaX)) { this._dragDirection = "vertical"; this._swipeBillId = null; return; }
-      this._dragDirection = "horizontal";
+      const direction = resolveSwipeDirection(deltaX, deltaY);
+      if (direction === null) return;
+      this._dragDirection = direction;
+      if (direction === "vertical") { this._swipeBillId = null; return; }
       this._isDragging = true;
     }
     if (this._dragDirection !== "horizontal") return;
     const sysInfo = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync();
     const rpxRatio = 750 / sysInfo.windowWidth;
-    let offsetRpx = this._swipeBaseX + deltaX * rpxRatio;
-    if (offsetRpx > 0) offsetRpx = offsetRpx * 0.2;
-    if (offsetRpx < -220) offsetRpx = -220 + (offsetRpx + 220) * 0.2;
+    const offsetRpx = swipeOffsetRpx(this._swipeBaseX, deltaX, rpxRatio);
     const map = {};
-    map[billId] = Math.round(offsetRpx);
+    map[billId] = offsetRpx;
     this.setData({ swipeOffsetMap: Object.assign({}, this.data.swipeOffsetMap, map) });
   },
 

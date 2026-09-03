@@ -181,7 +181,7 @@
 .badge { font-size: 22rpx; padding: 4rpx 16rpx; border-radius: 20rpx; }
 .badge-pending { background: #FFF3E0; color: #E89100; }
 .badge-processing { background: #E3F2FD; color: #1976D2; }
-.badge-resolved { background: #E8F5E9; color: #2E7D32; }
+.badge-resolved { background: #FFF1D6; color: #8B5E34; }
 .badge-closed { background: #EFEBE9; color: #8D6E63; }
 
 .fb-content {

@@ -1,8 +1,8 @@
 const app = getApp();
+const { nowShanghai } = require("../../utils/dates.js");
 
 const getShanghaiMonth = () => {
-  const now = new Date(Date.now() + 8 * 60 * 60 * 1000);
-  return now.getUTCFullYear() + "-" + String(now.getUTCMonth() + 1).padStart(2, "0");
+  return nowShanghai().substring(0, 7);
 };
 
 const formatMonthLabel = (month) => {

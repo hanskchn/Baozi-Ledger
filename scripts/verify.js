@@ -159,20 +159,32 @@ if (colorFlags.length === 0) ok("全部 WXSS 色彩符合暖橙体系（绿色�
 else fail("发现非收入语义的绿色强调色", colorFlags.slice(0, 8).join(", "));
 
 console.log("[8/13] 前端 action ↔ 云函数 handler 契约一致性");
+function extractHandlerMap(src) {
+  const start = src.search(/const\s+(?:HANDLERS|handlers)\s*=\s*\{/);
+  if (start < 0) return [];
+  const end = src.indexOf("};", start);
+  const block = src.slice(start, end);
+  return (block.match(/^\s*,?\s*[A-Za-z]+,?$/gm) || []).map((x) => x.replace(/[\s,]/g, "")).filter(Boolean);
+}
 function collectCloudHandlers(fnPath) {
   const src = fs.readFileSync(fnPath, "utf8");
-  if (fnPath.includes("accountingFunctions")) {
-    const start = src.indexOf("const handlers = {");
-    const end = src.indexOf("};", start);
-    const block = src.slice(start, end);
-    return (block.match(/^\s*,?\s*[A-Za-z]+,?$/gm) || []).map((x) => x.replace(/[\s,]/g, "")).filter(Boolean);
+  if (fnPath.includes("accountingFunctions") || fnPath.includes("feedbackFunctions")) {
+    return extractHandlerMap(src);
+  }
+  if (fnPath.includes("resetTestData")) {
+    const actions = [];
+    const re = /event\.action\s*(?:===|!==)\s*"([A-Za-z.]+)"/g;
+    let mm;
+    while ((mm = re.exec(src))) actions.push(mm[1]);
+    return actions;
   }
   return (src.match(/case "[A-Za-z.]*":/g) || []).map((x) => x.replace(/case "|":/g, ""));
 }
-const handlers = new Set([
-  ...collectCloudHandlers(path.join(ROOT, "cloudfunctions", "ledgerFunctions", "index.js")),
-  ...collectCloudHandlers(path.join(ROOT, "cloudfunctions", "accountingFunctions", "index.js"))
-]);
+const handlers = new Set();
+for (const dir of ["ledgerFunctions", "accountingFunctions", "feedbackFunctions", "resetTestData"]) {
+  const p = path.join(ROOT, "cloudfunctions", dir, "index.js");
+  if (fs.existsSync(p)) collectCloudHandlers(p).forEach((h) => handlers.add(h));
+}
 const frontend = [
   ...listFiles(path.join(ROOT, "miniprogram"), ".js"),
   ...listFiles(path.join(ROOT, "miniprogram"), ".wxml")

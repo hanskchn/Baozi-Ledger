@@ -14,6 +14,7 @@ const formatTime = (value) => {
   const pad = (n) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 };
+const { callFunction } = require("../../utils/api.js");
 
 Page({
   data: {
@@ -32,8 +33,7 @@ Page({
     page: 1,
     pageSize: 20,
     isDeveloper: false,
-    openid: "",
-    openidShort: ""
+    identity: ""
   },
 
   onLoad() {
@@ -56,22 +56,17 @@ Page({
     }
   },
 
-  copyOpenid() {
-    if (!this.data.openid) return;
-    wx.setClipboardData({ data: this.data.openid, success: () => wx.showToast({ title: "已复制身份ID", icon: "none" }) });
+  copyIdentity() {
+    if (!this.data.identity) return;
+    wx.setClipboardData({ data: this.data.identity, success: () => wx.showToast({ title: "已复制身份ID", icon: "none" }) });
   },
 
-  async call(action, data = {}) {
-    const response = await wx.cloud.callFunction({ name: "feedbackFunctions", data: { ...data, action } });
-    if (!response.result?.success) throw new Error(response.result?.message || "操作失败");
-    return response.result;
-  },
+  call(action, data = {}) { return callFunction("feedbackFunctions", action, data); },
 
   async fetchWhoami() {
     try {
       const result = await this.call("whoami");
-      const openid = result.openid || "";
-      this.setData({ isDeveloper: Boolean(result.isDeveloper), openid, openidShort: openid ? openid.slice(-8) : "" });
+      this.setData({ isDeveloper: Boolean(result.isDeveloper), identity: result.identity || "" });
     } catch (error) {
       console.warn("获取身份失败", error);
     }

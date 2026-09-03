@@ -1,5 +1,6 @@
 const app = getApp();
 const brand = require("../../utils/brand");
+const { callFunction } = require("../../utils/api.js");
 
 Page({
   data: { fileName: "", fileID: "", previewData: [], memberMappings: [], importing: false, previewing: false, familyId: "", total: 0, lastBatchId: "", hasBrandAssets: brand.available, importProgress: null,
@@ -98,7 +99,7 @@ Page({
     if (!confirmed.confirm) return;
     try { const result = await this.call("rollbackImport", { familyId: this.data.familyId, batchId: this.data.lastBatchId }); wx.showToast({ title: "已撤销 " + result.removed + " 条" }); this.setData({ lastBatchId: "" }); } catch (error) { wx.showToast({ title: error.message || "撤销失败", icon: "none" }); }
   },
-  async call(action, data) { const response = await wx.cloud.callFunction({ name: "accountingFunctions", data: { ...data, action } }); if (!response.result?.success) { const err = new Error(response.result?.message || "操作失败"); err.batchId = response.result?.batchId || ""; err.imported = response.result?.imported; throw err; } return response.result; },
+  call(action, data) { return callFunction("accountingFunctions", action, data); },
   onEmptyImageError() { this.setData({ emptyImageFailed: true }); },
   onDoneImageError() { this.setData({ doneImageFailed: true }); },
   noopProgress() {}

@@ -1,6 +1,7 @@
 const app = getApp();
 const dailyReminder = require("../../utils/dailyReminder.js");
 const { mergePreferences } = require("../../utils/preferences.js");
+const { nowShanghai } = require("../../utils/dates.js");
 
 Page({
   data: {
@@ -119,9 +120,7 @@ Page({
   },
 
   formatShanghaiDateTime() {
-    const date = new Date(Date.now() + 8 * 60 * 60 * 1000);
-    const pad = (value) => String(value).padStart(2, "0");
-    return date.getUTCFullYear() + "-" + pad(date.getUTCMonth() + 1) + "-" + pad(date.getUTCDate()) + " " + pad(date.getUTCHours()) + ":" + pad(date.getUTCMinutes());
+    return nowShanghai();
   },
 
   async loadFormOptions() {
@@ -307,17 +306,6 @@ Page({
     });
   },
 
-  onDateSheetChange(e) {
-    this.setData({ datePart: e.detail.value });
-  },
-
-  onHourChange(e) {
-    this.setData({ timeHour: this.data.hours[e.detail.value] });
-  },
-
-  onMinuteChange(e) {
-    this.setData({ timeMinute: this.data.minutes[e.detail.value] });
-  },
   onDateSheetChange(event) { this.setData({ datePart: event.detail.value }); },
   onHourChange(event) { this.setData({ timeHour: this.data.hours[event.detail.value] }); },
   onMinuteChange(event) { this.setData({ timeMinute: this.data.minutes[event.detail.value] }); },
