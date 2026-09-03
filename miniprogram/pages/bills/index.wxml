@@ -75,7 +75,8 @@
 
   <!-- 账单列表 -->
   <view class="bill-list">
-    <view class="empty-tip" wx:if="{{bills.length === 0 && !loadingMore}}">暂无账单记录</view>
+    <view class="empty-tip" wx:if="{{bills.length === 0 && !loading && !loadingMore}}">暂无账单记录</view>
+    <view class="list-loading" wx:if="{{loading && bills.length === 0}}"><view class="loading-spinner"></view><text>账单加载中…</text></view>
     <view class="bill-group" wx:for="{{billGroups}}" wx:for-item="group" wx:key="day">
       <view class="bill-date">
         <text class="bill-date-label">{{group.title}}</text>
@@ -114,6 +115,8 @@
         </view>
       </view>
     </view>
+    <view class="list-footer" wx:if="{{bills.length > 0 && loadingMore}}"><view class="loading-spinner small"></view><text>加载更多…</text></view>
+    <view class="list-footer" wx:if="{{bills.length > 0 && !loadingMore && !hasMore}}">— 没有更多账单了 —</view>
   </view>
 <privacy-popup />
 <announcement-popup />

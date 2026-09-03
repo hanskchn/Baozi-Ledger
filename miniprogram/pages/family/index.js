@@ -50,6 +50,13 @@ Page({
   async onShow() {
     await this.loadFamilies();
   },
+  async onPullDownRefresh() {
+    try {
+      await this.loadFamilies();
+    } finally {
+      wx.stopPullDownRefresh();
+    }
+  },
 
   async callFunction(type, data = {}) {
     const response = await wx.cloud.callFunction({

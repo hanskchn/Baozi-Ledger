@@ -37,6 +37,8 @@ Page({
   data: {
     type: "expense",
     categories: [],
+    loading: true,
+    errorMessage: "",
     familyId: "",
     isAdmin: false,
     expandedMap: {},
@@ -73,23 +75,30 @@ Page({
   },
 
   async load() {
-    const result = await this.call("listAllCategories", {
-      familyId: this.data.familyId,
-      type: this.data.type
-    });
-    const parents = result.categories.filter((item) => !item.parentId);
-    const categories = parents.map((parent) => ({
-      ...parent,
-      id: parent._id,
-      children: result.categories
-        .filter((item) => item.parentId === parent._id)
-        .map((item) => ({ ...item, id: item._id }))
-    }));
-    // 默认展开所有有子分类的分组
-    const expandedMap = {};
-    categories.forEach((item) => { expandedMap[item.id] = true; });
-    this.setData({ categories, expandedMap });
+    this.setData({ loading: true, errorMessage: "" });
+    try {
+      const result = await this.call("listAllCategories", {
+        familyId: this.data.familyId,
+        type: this.data.type
+      });
+      const parents = result.categories.filter((item) => !item.parentId);
+      const categories = parents.map((parent) => ({
+        ...parent,
+        id: parent._id,
+        children: result.categories
+          .filter((item) => item.parentId === parent._id)
+          .map((item) => ({ ...item, id: item._id }))
+      }));
+      const expandedMap = {};
+      categories.forEach((item) => { expandedMap[item.id] = true; });
+      this.setData({ categories, expandedMap });
+    } catch (error) {
+      this.setData({ errorMessage: error.message || "加载失败" });
+    } finally {
+      this.setData({ loading: false });
+    }
   },
+  async onPullDownRefresh() { await this.load(); wx.stopPullDownRefresh(); },
 
   switchType(event) {
     const type = event.currentTarget.dataset.type;

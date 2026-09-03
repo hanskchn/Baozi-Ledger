@@ -1,5 +1,6 @@
 {
   "navigationBarTitleText": "统计",
+  "enablePullDownRefresh": true,
   "usingComponents": {
     "pie-chart": "/components/pie-chart/index",
     "trend-chart": "/components/trend-chart/index"

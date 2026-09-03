@@ -1,3 +1,4 @@
 {
-  "navigationBarTitleText": "家庭管理"
+  "navigationBarTitleText": "家庭管理",
+  "enablePullDownRefresh": true
 }

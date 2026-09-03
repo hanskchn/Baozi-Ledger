@@ -12,6 +12,7 @@
       <text class="amount-symbol">¥</text>
       <input class="amount-input" type="digit" placeholder="0.00" placeholder-class="amount-placeholder" value="{{amount}}" bindinput="onAmountInput" focus="{{true}}" />
     </view>
+    <text class="amount-error" wx:if="{{amountError}}">{{amountError}}</text>
   </view>
 
   <!-- 分类选择 -->

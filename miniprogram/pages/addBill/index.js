@@ -1,5 +1,6 @@
 const app = getApp();
 const dailyReminder = require("../../utils/dailyReminder.js");
+const { mergePreferences } = require("../../utils/preferences.js");
 
 Page({
   data: {
@@ -25,6 +26,7 @@ Page({
     memberName: "",
     remark: "",
     merchant: "",
+    amountError: "",
     categories: [],
     accounts: [],
     members: [],
@@ -151,7 +153,10 @@ Page({
       const categories = this.normalizeCategories(optionsResult.categories || []);
       const accounts = optionsResult.accounts || [];
       const members = this.decorateMembers(optionsResult.members || []);
-      const preferences = preferenceResult.preferences || null;
+      // 以本地“最近使用”为准合并服务端偏好，避免云端旧值覆盖本地刚保存的偏好（U7）
+      let currentCached = null;
+      try { currentCached = wx.getStorageSync("formOptions:" + familyId) || null; } catch (e) {}
+      const preferences = mergePreferences(currentCached && currentCached.preferences, preferenceResult.preferences || null);
       this.setData({ categories, accounts, members, preferences });
       this.writeOptionsCache(familyId, type, { categories: optionsResult.categories || [], accounts, members, preferences });
       if (!this.data.editMode) this.applyDefaults();
@@ -182,7 +187,7 @@ Page({
         ts: Date.now(),
         accounts: data.accounts || existing.accounts || [],
         members: data.members || existing.members || [],
-        preferences: data.preferences || existing.preferences || null
+        preferences: mergePreferences(existing.preferences, data.preferences || null)
       };
       if (type === "income") {
         toSave.categories = existing.categories || [];
@@ -279,7 +284,15 @@ Page({
     }
   },
 
-  onAmountInput(event) { this.setData({ amount: event.detail.value }); },
+  onAmountInput(event) {
+    const amount = String(event.detail.value || "");
+    let amountError = "";
+    const text = amount.trim();
+    if (text && !/^(?:0|[1-9]\d{0,6})(?:\.\d{0,2})?$/.test(text)) {
+      amountError = "金额最多 7 位整数 + 2 位小数，且需为正数";
+    }
+    this.setData({ amount, amountError });
+  },
   onRemarkInput(event) { this.setData({ remark: event.detail.value }); },
   onMerchantInput(event) { this.setData({ merchant: event.detail.value }); },
 

@@ -1,6 +1,8 @@
 <view class="page">
   <view class="account-list">
-    <view class="empty-tip" wx:if="{{accounts.length === 0}}">暂无账户，请添加</view>
+    <view class="empty-tip" wx:if="{{accounts.length === 0 && !loading}}">暂无账户，请添加</view>
+    <view class="list-loading" wx:if="{{loading}}"><view class="loading-spinner"></view><text>账户加载中…</text></view>
+    <view class="list-error" wx:if="{{errorMessage && !loading}}">{{errorMessage}}<view class="list-error-tip">下拉可重试</view></view>
     <view class="account-item {{item.enabled === false ? 'is-disabled' : ''}}" wx:for="{{accounts}}" wx:key="id">
       <text class="account-icon">💳</text>
       <text class="account-name">{{item.name}}</text>

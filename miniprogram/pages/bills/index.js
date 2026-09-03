@@ -34,6 +34,7 @@ Page({
     offset: 0,
     hasMore: true,
     loadingMore: false,
+    loading: false,
     loadedFamilyId: "",
     slidBillId: "",
     swipeOffsetMap: {},
@@ -151,13 +152,14 @@ Page({
     try {
       const familyId = app.globalData.currentFamilyId;
       if (!familyId) return;
+      if (!append && this.data.bills.length === 0) this.setData({ loading: true });
       const cacheKey = this.buildBillsCacheKey();
       if (!forceRefresh && !append && this.data.offset === 0 && cacheKey) {
         let cached = null;
         try { cached = wx.getStorageSync(cacheKey); } catch (error) { cached = null; }
         if (cached && cached.bills && Date.now() - cached.ts < BILLS_CACHE_TTL_MS) {
           const bills = cached.bills.map(bill => ({ ...bill, displayTime: (bill.date || "").substring(11, 16) }));
-          this.setData({ bills, billGroups: this._groupBills(bills), hasMore: bills.length === 20, loadingMore: false });
+          this.setData({ bills, billGroups: this._groupBills(bills), hasMore: bills.length === 20, loadingMore: false, loading: false });
           return;
         }
       }
@@ -181,14 +183,14 @@ Page({
         displayTime: (bill.date || "").substring(11, 16)
       }));
       const bills = append ? this.data.bills.concat(incoming) : incoming;
-      this.setData({ bills, billGroups: this._groupBills(bills), hasMore: incoming.length === 20, loadingMore: false });
+      this.setData({ bills, billGroups: this._groupBills(bills), hasMore: incoming.length === 20, loadingMore: false, loading: false });
       if (!append && this.data.offset === 0 && cacheKey) {
         try { wx.setStorageSync(cacheKey, { ts: Date.now(), bills }); } catch (storageError) { console.warn("账单缓存写入失败", storageError); }
       }
     } catch (error) {
       wx.showToast({ title: error.message || "加载失败", icon: "none" });
       if (append) this.setData({ offset: Math.max(0, this.data.offset - 20), loadingMore: false });
-      else this.setData({ loadingMore: false });
+      else this.setData({ loadingMore: false, loading: false });
     }
   },
 

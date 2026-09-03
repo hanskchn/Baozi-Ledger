@@ -38,6 +38,14 @@ Page({
     if (dirty) app.globalData.billsDirty = false;
     this.loadOptions().then(() => this.loadStats({ forceRefresh: dirty }));
   },
+  async onPullDownRefresh() {
+    try {
+      this.loadOptions();
+      await this.loadStats({ forceRefresh: true });
+    } finally {
+      wx.stopPullDownRefresh();
+    }
+  },
   async loadOptions() { try { await app.ensureInitialized(); const familyId = app.globalData.currentFamilyId; if (!familyId) return; if (this.data.loadedFamilyId && this.data.loadedFamilyId !== familyId) this.setData({ filterMember: "", filterMemberLabel: "", filterAccount: "", memberPickerIndex: 0, accountPickerIndex: 0 }); const res = await wx.cloud.callFunction({ name: "accountingFunctions", data: { action: "listFormOptions", familyId } }); const members = res.result?.members || []; const accounts = res.result?.accounts || []; this.setData({ members, accounts, memberOptions: ["全部成员"].concat(members.map((item) => item.nickName || "微信用户")), accountOptions: ["全部账户"].concat(accounts.map((item) => item.name)), loadedFamilyId: familyId }); } catch (error) { console.warn("加载统计筛选项失败", error); } },
   async loadStats(options) {
     const forceRefresh = options && options.forceRefresh === true;

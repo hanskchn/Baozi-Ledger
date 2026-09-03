@@ -5,8 +5,9 @@
   </view>
 
   <view class="result-list">
-    <view class="empty-tip" wx:if="{{keyword && results.length === 0}}"><image wx:if="{{hasBrandAssets && !emptyImageFailed}}" class="empty-illustration" src="/images/brand/search-empty.png" mode="aspectFit" binderror="onEmptyImageError"></image><view wx:else class="empty-mark">🔍</view><text>未找到相关账单</text></view>
-    <view class="empty-tip" wx:if="{{!keyword}}">输入关键词搜索账单</view>
+    <view class="empty-tip" wx:if="{{keyword && results.length === 0 && !loading && !loadingMore}}"><image wx:if="{{hasBrandAssets && !emptyImageFailed}}" class="empty-illustration" src="/images/brand/search-empty.png" mode="aspectFit" binderror="onEmptyImageError"></image><view wx:else class="empty-mark">🔍</view><text>未找到相关账单</text></view>
+    <view class="empty-tip" wx:if="{{!keyword && !loading}}">输入关键词搜索账单</view>
+    <view class="list-loading" wx:if="{{loading && results.length === 0}}"><view class="loading-spinner"></view><text>搜索中…</text></view>
     <view class="result-item" wx:for="{{results}}" wx:key="id" data-id="{{item.id}}" bindtap="onItemTap">
       <view class="result-icon">{{item.icon}}</view>
       <view class="result-info">
@@ -16,6 +17,8 @@
       </view>
       <text class="result-amount {{item.type}}">{{item.type === 'expense' ? '-' : '+'}}¥{{item.amount}}</text>
     </view>
+    <view class="list-footer" wx:if="{{results.length > 0 && loadingMore}}"><view class="loading-spinner small"></view><text>加载更多…</text></view>
+    <view class="list-footer" wx:if="{{results.length > 0 && !loadingMore && !hasMore}}">— 已显示全部结果 —</view>
   </view>
 <privacy-popup />
 </view>

@@ -444,3 +444,10 @@
 /* 日期列加宽 */
 .date-col { min-width: 280rpx; }
 .date-value { font-size: 40rpx; }
+
+.amount-error {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: #C62828;
+}

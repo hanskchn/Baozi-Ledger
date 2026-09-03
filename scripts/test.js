@@ -2,7 +2,7 @@
 // 运行：node scripts/test.js
 const { execFileSync } = require("node:child_process");
 const path = require("node:path");
-const files = ["test-pure.js", "test-ledger-pure.js", "test-contract.js", "test-ledger-contract.js", "test-init.js", "test-import.js", "test-export.js"].map((f) => path.join(__dirname, f));
+const files = ["test-pure.js", "test-ledger-pure.js", "test-preferences.js", "test-contract.js", "test-ledger-contract.js", "test-init.js", "test-import.js", "test-export.js"].map((f) => path.join(__dirname, f));
 try {
   execFileSync(process.execPath, ["--test", ...files], { stdio: "inherit" });
 } catch (e) {
