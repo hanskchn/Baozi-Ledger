@@ -88,9 +88,10 @@ Page({
     if (!modal.confirm) return;
     wx.showLoading({ title: "清除中", mask: true });
     try {
-      const data = option.key === "all" ? { action: "clear" } : { action: "clear", collections: option.collections };
+      // 云函数侧要求显式确认后才执行清空，防止误触/调用方遗漏
+      const data = option.key === "all" ? { action: "clear", confirm: true } : { action: "clear", collections: option.collections, confirm: true };
       const response = await wx.cloud.callFunction({ name: "resetTestData", data });
-      if (!response.result?.success) throw new Error("清除失败");
+      if (!response.result?.success) throw new Error(response.result?.message || "清除失败");
       wx.hideLoading();
       wx.showToast({ title: "已清除", icon: "success" });
       this.loadCounts();

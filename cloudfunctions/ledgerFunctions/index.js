@@ -148,6 +148,42 @@ const getStableDocumentId = (...parts) => crypto.createHash("sha256").update(par
 const getStableUserId = (openid) => getStableDocumentId("user", openid);
 const getStableMembershipId = (familyId, openid) => getStableDocumentId("member", familyId, openid);
 
+// 头像仅允许云存储 fileID 或 https 链接并限制长度，防止任意文本借资料字段入库
+const sanitizeAvatarUrl = (value) => {
+  const url = String(value || "").trim();
+  if (!url || url.length > 512) return "";
+  return /^(cloud:\/\/|https:\/\/)/.test(url) ? url : "";
+};
+
+// 仅放行业务错误信息给客户端：带中文且不含底层驱动/网络报错特征，其余收敛为通用文案
+const INTERNAL_ERROR_MARKERS = [":fail", "openapi", "document.", "collection", "database", "getaddrinfo", "econn", "etimedout", "socket", "ssl", "network", "timeout", "internalerror", "failedoperation", "accessdenied", "permission", "mongo"];
+const toClientErrorMessage = (error) => {
+  const message = String((error && error.message) || "");
+  if (!message) return "服务器错误";
+  if (error && error.expose) return message;
+  const lower = message.toLowerCase();
+  if (INTERNAL_ERROR_MARKERS.some((marker) => lower.includes(marker)) || !/[\u4e00-\u9fa5]/.test(message)) {
+    return "服务器开小差了，请稍后重试";
+  }
+  return message;
+};
+
+// 邀请码校验/加入的轻量限流（单实例内存，最佳努力）：同一 openid 每分钟最多 12 次
+const INVITE_RATE_LIMIT = 12;
+const INVITE_RATE_WINDOW_MS = 60 * 1000;
+const inviteRateMap = new Map();
+const assertInviteRateLimit = () => {
+  const key = getOpenid() || "anonymous";
+  const now = Date.now();
+  const entry = inviteRateMap.get(key);
+  if (!entry || now > entry.resetAt) {
+    inviteRateMap.set(key, { count: 1, resetAt: now + INVITE_RATE_WINDOW_MS });
+    return;
+  }
+  entry.count += 1;
+  if (entry.count > INVITE_RATE_LIMIT) throw new Error("操作过于频繁，请稍后再试");
+};
+
 // 计算默认账本名称：已有同名账本时依次使用“我的家庭账本 2、3…”
 const computeDefaultFamilyName = (usedNames) => {
   const set = new Set(Array.from(usedNames || []).map((item) => String(item).trim().toLowerCase()).filter(Boolean));
@@ -162,7 +198,7 @@ const INVITE_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const generateInviteCode = () => {
   let code = "";
   for (let index = 0; index < 8; index += 1) {
-    code += INVITE_CODE_ALPHABET[Math.floor(Math.random() * INVITE_CODE_ALPHABET.length)];
+    code += INVITE_CODE_ALPHABET[crypto.randomInt(0, INVITE_CODE_ALPHABET.length)];
   }
   return code;
 };
@@ -221,7 +257,7 @@ const ensureUser = async (profile = {}) => {
   const userData = {
     openid,
     nickName: String(profile.nickName || existing?.nickName || "微信用户").slice(0, 32),
-    avatarUrl: String(profile.avatarUrl || existing?.avatarUrl || ""),
+    avatarUrl: sanitizeAvatarUrl(profile.avatarUrl || existing?.avatarUrl || ""),
     registered: profile.registered === true || existing?.registered === true,
     updatedAt: now
   };
@@ -781,6 +817,7 @@ const getValidInvite = async (code) => {
 };
 
 const verifyInvite = async (event) => {
+  assertInviteRateLimit();
   const code = String(event.code || "").trim().toUpperCase();
   if (!code) throw new Error("请输入邀请码");
   const invite = await getValidInvite(code);
@@ -805,6 +842,7 @@ const verifyInvite = async (event) => {
 };
 
 const confirmJoinFamily = async (event) => {
+  assertInviteRateLimit();
   const code = String(event.code || "").trim().toUpperCase();
   if (!code) throw new Error("请输入邀请码");
   const invite = await getValidInvite(code);
@@ -961,10 +999,32 @@ const getAccountCancellationStatus = async () => {
   return { success: true, canCancel: adminFamilies.length === 0, adminFamilies };
 };
 
+const CANCELLATION_INTENT_TTL_MS = 30 * 60 * 1000;
+
+// 记录账号注销意图：forceLastFamily 豁免只在此意图有效期内放行，不信任客户端自报
+const beginAccountCancellation = async () => {
+  const openid = getOpenid();
+  await db.collection("users").doc(getStableUserId(openid)).update({ data: { cancellationIntentAt: new Date(), updatedAt: new Date() } });
+  return { success: true };
+};
+
+const hasActiveCancellationIntent = async (openid) => {
+  try {
+    const user = await getUser(openid);
+    const intentAt = user && user.cancellationIntentAt ? new Date(user.cancellationIntentAt).getTime() : 0;
+    return intentAt > Date.now() - CANCELLATION_INTENT_TTL_MS;
+  } catch (error) {
+    console.warn("查询注销意图失败", error);
+    return false;
+  }
+};
+
 const dissolveFamily = async (event) => {
   const openid = getOpenid();
-  // 注销流程会批量解散管理员账本，此时允许解散最后一个账本（注销后会重新建号）
-  if (!event.forceLastFamily) {
+  // 注销流程会批量解散管理员账本，此时允许解散最后一个账本（注销后会重新建号）；
+  // 该豁免必须以服务端记录的注销意图为前提，不再信任客户端的 forceLastFamily
+  const allowForceLastFamily = Boolean(event.forceLastFamily) && await hasActiveCancellationIntent(openid);
+  if (!allowForceLastFamily) {
     const memberships = await getValidMemberships(openid);
     if (memberships.length === 1 && memberships[0].family._id === event.familyId) {
       throw new Error("你至少需要保留一个账本，无法解散唯一的账本");
@@ -1459,9 +1519,9 @@ const main = async (event) => {
     case "leaveFamily": return await leaveFamily(event);
     case "transferAdmin": return await transferAdmin(event);
     case "getAccountCancellationStatus": return await getAccountCancellationStatus();
+    case "beginAccountCancellation": return await beginAccountCancellation();
     case "dissolveFamily": return await dissolveFamily(event);
     case "restoreFamily": return await restoreFamily(event);
-    case "purgeExpiredFamilies": return await purgeExpiredFamilies();
     case "cancelAccount": return await cancelAccount();
     case "getReminderSetting": return await getReminderSetting();
     case "saveReminderSetting": return await saveReminderSetting(event);
@@ -1472,9 +1532,16 @@ const main = async (event) => {
   }
 };
 
+// 定时触发器识别：TriggerName 存在且当前调用不携带用户身份。
+// 客户端通过 callFunction 伪造的 Timer 事件必然带有 openid，无法进入定时任务分支。
+const isTimerTrigger = (event, openid) => {
+  const effectiveOpenid = typeof openid === "string" ? openid : (cloud.getWXContext().OPENID || "");
+  return Boolean(event && event.TriggerName && !event.action && !event.type) && !effectiveOpenid;
+};
+
 exports.main = async (event) => {
   try {
-    if (event && event.TriggerName && !event.action && !event.type) {
+    if (isTimerTrigger(event)) {
       if (event.TriggerName === "dailyReminder") return await sendDailyReminders();
       let action = "purgeExpiredFamilies";
       try {
@@ -1484,11 +1551,12 @@ exports.main = async (event) => {
         }
       } catch (e) { /* ignore parse error, use default */ }
       if (action === "purgeExpiredFamilies") return await purgeExpiredFamilies();
+      return fail("未知定时任务", "UNKNOWN_ACTION");
     }
     return await main(event);
   } catch (error) {
     console.error(error);
-    return fail(error.message || "服务器错误", "SERVER_ERROR");
+    return fail(toClientErrorMessage(error), "SERVER_ERROR");
   }
 };
 const ensureFamilySeedData = async (familyId) => {
@@ -1547,6 +1615,10 @@ if (typeof module !== "undefined") {
     normalizeName,
     compareMembership,
     computeDefaultFamilyName,
-    generateInviteCode
+    generateInviteCode,
+    sanitizeAvatarUrl,
+    toClientErrorMessage,
+    assertInviteRateLimit,
+    isTimerTrigger
   };
 }

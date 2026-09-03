@@ -118,3 +118,50 @@ test("resolveImportedMember 唯一昵称匹配 / 重复归管理员 / 未匹配"
   assert.equal(none.ambiguous, false);
   assert.equal(none.member, fallback);
 });
+
+test("escapeRegExp 转义正则元字符", () => {
+  assert.equal(T.escapeRegExp("a.b*c"), "a\\.b\\*c");
+  assert.equal(T.escapeRegExp("(1+2)[?]"), "\\(1\\+2\\)\\[\\?\\]");
+  assert.equal(T.escapeRegExp("普通文本"), "普通文本");
+  assert.equal(T.escapeRegExp(""), "");
+  // 转义后作为字面量匹配，不再被当作正则语义
+  assert.ok(new RegExp(T.escapeRegExp("a.b")).test("a.b"));
+  assert.ok(!new RegExp(T.escapeRegExp("a.b")).test("axb"));
+  assert.ok(new RegExp(T.escapeRegExp("a+b*")).test("a+b*"));
+});
+
+test("toClientErrorMessage 业务中文透传", () => {
+  assert.equal(T.toClientErrorMessage(new Error("金额格式不正确")), "金额格式不正确");
+  assert.equal(T.toClientErrorMessage(new Error("请先转让管理员")), "请先转让管理员");
+  assert.equal(T.toClientErrorMessage(new Error()), "服务器错误");
+});
+
+test("toClientErrorMessage 收敛底层/英文错误", () => {
+  const msgs = [
+    "collection connection failed",
+    "request :fail -1",
+    "openapi 调用失败",
+    "ETIMEDOUT",
+    "server internalerror",
+    "socket hang up",
+    "数据库 getaddrinfo 解析失败"
+  ];
+  for (const msg of msgs) {
+    assert.equal(T.toClientErrorMessage(new Error(msg)), "服务器开小差了，请稍后重试", msg);
+  }
+  const exposed = new Error("第三方接口限流");
+  exposed.expose = true;
+  assert.equal(T.toClientErrorMessage(exposed), "第三方接口限流");
+});
+
+test("sanitizePreferenceValue 仅接受短文本", () => {
+  assert.equal(T.sanitizePreferenceValue("  餐饮  "), "餐饮");
+  assert.equal(T.sanitizePreferenceValue(""), null);
+  assert.equal(T.sanitizePreferenceValue(null), null);
+  assert.equal(T.sanitizePreferenceValue(undefined), null);
+  const long = T.sanitizePreferenceValue("一二三四五六七八九十壹贰叁肆伍陆柒捌玖拾");
+  assert.ok(long.length <= 20);
+  assert.throws(() => T.sanitizePreferenceValue(123));
+  assert.throws(() => T.sanitizePreferenceValue({ name: "x" }));
+  assert.throws(() => T.sanitizePreferenceValue(["餐饮"]));
+});

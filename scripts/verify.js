@@ -27,7 +27,7 @@ function listFiles(dir, ext) {
   return out;
 }
 
-console.log("[1/12] JS 语法检查 (node --check)");
+console.log("[1/13] JS 语法检查 (node --check)");
 const allJs = [
   ...listFiles(path.join(ROOT, "miniprogram"), ".js"),
   ...listFiles(path.join(ROOT, "cloudfunctions"), ".js")
@@ -44,7 +44,7 @@ for (const f of allJs) {
 }
 if (syntaxOk) ok(`${allJs.length} 个文件通过`);
 
-console.log("[2/12] 前端不直接操作云数据库");
+console.log("[2/13] 前端不直接操作云数据库");
 const frontendJs = listFiles(path.join(ROOT, "miniprogram"), ".js").filter((f) => !f.includes("ec-canvas"));
 let directDb = [];
 for (const f of frontendJs) {
@@ -54,7 +54,7 @@ for (const f of frontendJs) {
 if (directDb.length === 0) ok("无 wx.cloud.database / .collection(");
 else fail("发现前端直连数据库", directDb.join(", "));
 
-console.log("[3/12] 前端无 openid / 敏感成员字段残留");
+console.log("[3/13] 前端无 openid / 敏感成员字段残留");
 const sensitive = /openid|creatorOpenId|memberOpenid|operatorOpenId|data-openid/;
 const frontendFiles = [
   ...listFiles(path.join(ROOT, "miniprogram"), ".js"),
@@ -68,7 +68,7 @@ for (const f of frontendFiles) {
 if (leaks.length === 0) ok("无敏感字段残留");
 else fail("发现敏感字段", leaks.join(", "));
 
-console.log("[4/12] WXML 标签配平 (view)");
+console.log("[4/13] WXML 标签配平 (view)");
 let wxmlBad = [];
 for (const f of listFiles(path.join(ROOT, "miniprogram"), ".wxml")) {
   const src = fs.readFileSync(f, "utf8");
@@ -79,7 +79,7 @@ for (const f of listFiles(path.join(ROOT, "miniprogram"), ".wxml")) {
 if (wxmlBad.length === 0) ok("全部 WXML view 标签配平");
 else fail("WXML 标签不配平", wxmlBad.join(", "));
 
-console.log("[5/12] WXML 规范（wx:for 带 wx:key，事件处理器存在）");
+console.log("[5/13] WXML 规范（wx:for 带 wx:key，事件处理器存在）");
 function readFile(p){ return fs.readFileSync(p, "utf8"); }
 const wxmlFiles = listFiles(path.join(ROOT, "miniprogram"), ".wxml");
 const wxmlIssues = [];
@@ -106,7 +106,7 @@ for (const wxml of wxmlFiles) {
 if (wxmlIssues.length === 0) ok("全部 WXML wx:for 带 wx:key 且事件处理器已定义");
 else fail("WXML 规范问题", wxmlIssues.slice(0, 8).join("; "));
 
-console.log("[6/12] 页面下拉刷新配置（onPullDownRefresh ↔ enablePullDownRefresh）");
+console.log("[6/13] 页面下拉刷新配置（onPullDownRefresh ↔ enablePullDownRefresh）");
 const pageDirs = fs.readdirSync(path.join(ROOT, "miniprogram", "pages"));
 const refreshIssues = [];
 for (const dir of pageDirs) {
@@ -123,7 +123,7 @@ for (const dir of pageDirs) {
 if (refreshIssues.length === 0) ok("全部页面 onPullDownRefresh 处理器与 enablePullDownRefresh 配置配对");
 else fail("下拉刷新配置不一致", refreshIssues.join("; "));
 
-console.log("[7/12] 视觉系统一致性（无非收入语义的绿色强调色）");
+console.log("[7/13] 视觉系统一致性（无非收入语义的绿色强调色）");
 function toHsl(hex) {
   const n = parseInt(hex.slice(1), 16);
   let r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
@@ -158,7 +158,7 @@ for (const f of colorFiles) {
 if (colorFlags.length === 0) ok("全部 WXSS 色彩符合暖橙体系（绿色仅收入语义）");
 else fail("发现非收入语义的绿色强调色", colorFlags.slice(0, 8).join(", "));
 
-console.log("[8/12] 前端 action ↔ 云函数 handler 契约一致性");
+console.log("[8/13] 前端 action ↔ 云函数 handler 契约一致性");
 function collectCloudHandlers(fnPath) {
   const src = fs.readFileSync(fnPath, "utf8");
   if (fnPath.includes("accountingFunctions")) {
@@ -191,7 +191,7 @@ const missing = Array.from(called).filter((name) => !handlers.has(name)).sort();
 if (missing.length === 0) ok(called.size + " 个前端 action 均有对应云端 handler");
 else fail("存在无对应 handler 的前端 action", missing.join(", "));
 
-console.log("[9/12] 主包体积 < 2MB");
+console.log("[9/13] 主包体积 < 2MB");
 function dirBytes(dir) {
   let total = 0;
   if (!fs.existsSync(dir)) return 0;
@@ -208,7 +208,7 @@ const limitBytes = 2 * 1024 * 1024;
 if (mainBytes < limitBytes) ok("主包 " + Math.round(mainBytes / 1024) + " KB < 2MB");
 else fail("主包体积超限", Math.round(mainBytes / 1024) + " KB >= 2MB");
 
-console.log("[10/12] 品牌资源完整性（brand.js 引用图片存在且透明）");
+console.log("[10/13] 品牌资源完整性（brand.js 引用图片存在且透明）");
 const brandCfg = require(path.join(ROOT, "miniprogram", "utils", "brand.js"));
 const pngSig = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
 const brandRefs = [brandCfg.logo, brandCfg.emptyBills, brandCfg.welcome, brandCfg.searchEmpty, brandCfg.importEmpty, brandCfg.importDone, brandCfg.networkError].filter(Boolean);
@@ -224,7 +224,7 @@ for (const rel of brandRefs) {
 if (brandIssues.length === 0) ok(brandRefs.length + " 张品牌资源均存在且为透明 PNG");
 else fail("品牌资源问题", brandIssues.join("; "));
 
-console.log("[11/12] 静态图片路径有效性（WXML image src + tabBar 图标）");
+console.log("[11/13] 静态图片路径有效性（WXML image src + tabBar 图标）");
 const imgIssues = [];
 const staticImgRe = /<image\b[^>]*\bsrc="([^"{]*?)"/g;
 for (const f of listFiles(path.join(ROOT, "miniprogram"), ".wxml")) {
@@ -253,12 +253,31 @@ try {
 if (imgIssues.length === 0) ok("WXML 静态图片与 tabBar 图标路径均有效");
 else fail("图片路径无效", imgIssues.slice(0, 8).join("; "));
 
-console.log("[12/12] git 空白检查 (git diff --check)");
+console.log("[12/13] git 空白检查 (git diff --check)");
 try {
   execFileSync("git", ["diff", "--check"], { cwd: ROOT, stdio: "pipe" });
   ok("无空白错误");
 } catch (e) {
   fail("git diff --check 存在空白错误", (e.stderr || "").toString().split("\n").filter(Boolean).slice(0, 3).join(" | "));
+}
+
+console.log("[13/13] 开发者白名单一致性（feedback / resetTestData / ledger 提醒调试）");
+const developerLists = [];
+for (const file of allJs) {
+  const src = fs.readFileSync(file, "utf8");
+  const match = src.match(/const (?:DEVELOPER_OPENIDS|REMINDER_DEBUG_DEVELOPER_OPENIDS)\s*=\s*(\[[^\]]*\])/);
+  if (match) developerLists.push({ file: path.relative(ROOT, file), list: match[1].replace(/\s+/g, "") });
+}
+if (developerLists.length < 2) {
+  fail("未找到开发者白名单定义", "应至少包含 feedback / resetTestData / ledger 三处");
+} else {
+  const first = developerLists[0].list;
+  const mismatch = developerLists.filter((item) => item.list !== first).map((item) => item.file);
+  if (mismatch.length) {
+    fail("开发者白名单不一致，换号需三处同步", developerLists.map((item) => item.file + "=" + item.list).join("; "));
+  } else {
+    ok("开发者白名单 " + developerLists.length + " 处一致");
+  }
 }
 
 console.log("");

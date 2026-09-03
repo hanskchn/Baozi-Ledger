@@ -6,6 +6,21 @@ const db = cloud.database();
 
 const DEVELOPER_OPENIDS = ["oEntM3edll4iSPXTT0RzgomZNFIM"];
 
+const fail = (message, errorCode = "BAD_REQUEST") => ({ success: false, errorCode, message });
+
+// 仅放行业务错误信息给客户端：带中文且不含底层驱动/网络报错特征，其余收敛为通用文案
+const INTERNAL_ERROR_MARKERS = [":fail", "openapi", "document.", "collection", "database", "getaddrinfo", "econn", "etimedout", "socket", "ssl", "network", "timeout", "internalerror", "failedoperation", "accessdenied", "permission", "mongo"];
+const toClientErrorMessage = (error) => {
+  const message = String((error && error.message) || "");
+  if (!message) return "服务器错误";
+  if (error && error.expose) return message;
+  const lower = message.toLowerCase();
+  if (INTERNAL_ERROR_MARKERS.some((marker) => lower.includes(marker)) || !/[\u4e00-\u9fa5]/.test(message)) {
+    return "服务器开小差了，请稍后重试";
+  }
+  return message;
+};
+
 const ALL_COLLECTIONS = [
   "users",
   "families",
@@ -77,23 +92,35 @@ const getCounts = async (names) => {
 };
 
 exports.main = async (event) => {
-  const openid = getOpenid();
-  if (!DEVELOPER_OPENIDS.includes(openid)) {
-    throw new Error("无权限执行该操作");
-  }
+  try {
+    const openid = getOpenid();
+    if (!DEVELOPER_OPENIDS.includes(openid)) {
+      return fail("无权限执行该操作", "FORBIDDEN");
+    }
 
-  if (event.action === "counts") {
-    return { success: true, counts: await getCounts(ALL_COLLECTIONS) };
-  }
+    if (event.action === "counts") {
+      return { success: true, counts: await getCounts(ALL_COLLECTIONS) };
+    }
+    if (event.action !== "clear") {
+      return fail("未知操作", "UNKNOWN_ACTION");
+    }
+    // 清空数据不可恢复，必须显式确认，不允许漏传 action 时“默认清空全部”
+    if (event.confirm !== true) {
+      return fail("清空数据需显式确认（确认后请重新提交）", "CONFIRM_REQUIRED");
+    }
 
-  let targets = ALL_COLLECTIONS;
-  if (event.action === "clear" && Array.isArray(event.collections) && event.collections.length) {
-    const invalid = event.collections.filter((name) => !ALL_COLLECTIONS.includes(name));
-    if (invalid.length) throw new Error("不支持清除的集合：" + invalid.join("、"));
-    targets = event.collections;
-  }
+    let targets = ALL_COLLECTIONS;
+    if (Array.isArray(event.collections) && event.collections.length) {
+      const invalid = event.collections.filter((name) => !ALL_COLLECTIONS.includes(name));
+      if (invalid.length) return fail("不支持清除的集合：" + invalid.join("、"));
+      targets = event.collections;
+    }
 
-  const before = await getCounts(targets);
-  const results = await Promise.all(targets.map((name) => clearCollection(name)));
-  return { success: true, before, results };
+    const before = await getCounts(targets);
+    const results = await Promise.all(targets.map((name) => clearCollection(name)));
+    return { success: true, before, results };
+  } catch (error) {
+    console.error("resetTestData error:", error);
+    return fail(toClientErrorMessage(error), "SERVER_ERROR");
+  }
 };

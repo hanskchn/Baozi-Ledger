@@ -52,6 +52,8 @@ const getShanghaiDate = (date = new Date()) => {
 const BILL_AMOUNT_PATTERN = /^(?:0|[1-9]\d{0,6})(?:\.\d{1,2})?$/;
 const MAX_BILL_AMOUNT_CENTS = 999999999;
 const normalizeText = (value, maxLength) => String(value || "").trim().slice(0, maxLength);
+// 用户输入用于模糊查询前必须转义，防止正则注入（ReDoS/语义篡改）
+const escapeRegExp = (value) => String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const parseAmountCents = (value, label = "金额") => {
   const text = String(value === undefined || value === null ? "" : value).trim();
   if (!BILL_AMOUNT_PATTERN.test(text)) throw new Error(label + "格式不正确");
@@ -90,6 +92,19 @@ const fail = (message, errorCode = "BAD_REQUEST") => ({
   errorCode,
   message
 });
+
+// 仅放行业务错误信息给客户端：带中文且不含底层驱动/网络报错特征，其余收敛为通用文案
+const INTERNAL_ERROR_MARKERS = [":fail", "openapi", "document.", "collection", "database", "getaddrinfo", "econn", "etimedout", "socket", "ssl", "network", "timeout", "internalerror", "failedoperation", "accessdenied", "permission", "mongo"];
+const toClientErrorMessage = (error) => {
+  const message = String((error && error.message) || "");
+  if (!message) return "服务器错误";
+  if (error && error.expose) return message;
+  const lower = message.toLowerCase();
+  if (INTERNAL_ERROR_MARKERS.some((marker) => lower.includes(marker)) || !/[\u4e00-\u9fa5]/.test(message)) {
+    return "服务器开小差了，请稍后重试";
+  }
+  return message;
+};
 
 const ensureCollections = async () => {
   if (!collectionsReadyPromise) {
@@ -519,7 +534,8 @@ const saveBudget = async (event) => {
   const data = { familyId: event.familyId, month, amount: Math.round(Number(amount) * 100), updatedAt: new Date() };
   const existing = await db.collection("budgets").where({ familyId: event.familyId, month }).limit(1).get();
   if (existing.data[0]) await db.collection("budgets").doc(existing.data[0]._id).update({ data });
-  else await db.collection("budgets").add({ data: { ...data, createdAt: new Date() } });
+  // 确定性文档 ID 使并发保存收敛到同一文档，避免查后插竞态产生同月重复预算
+  else await db.collection("budgets").doc(getStableDocumentId("budget", event.familyId, month)).set({ data: { ...data, createdAt: new Date() } });
   await writeOperationLog(event.familyId, "budget.save", month, { amount: data.amount });
   return { success: true };
 };
@@ -1066,6 +1082,13 @@ const getBillPreferences = async (event) => {
   return { success: true, preferences: toClientBillPreferences(result.data[0]) };
 };
 
+// 偏好值仅允许 ≤20 字的文本或空，拒绝任意结构化数据入库
+const sanitizePreferenceValue = (value) => {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value !== "string") throw new Error("记账偏好格式不正确");
+  return value.trim().slice(0, 20) || null;
+};
+
 const saveBillPreferences = async (event) => {
   await requireMember(event.familyId);
   const openid = getOpenid();
@@ -1073,9 +1096,9 @@ const saveBillPreferences = async (event) => {
   const data = {
     familyId: event.familyId,
     openid,
-    expenseCategory: event.expenseCategory || null,
-    incomeCategory: event.incomeCategory || null,
-    account: event.account || "现金",
+    expenseCategory: sanitizePreferenceValue(event.expenseCategory),
+    incomeCategory: sanitizePreferenceValue(event.incomeCategory),
+    account: sanitizePreferenceValue(event.account) || "现金",
     updatedAt: new Date()
   };
   if (existing.data[0]) {
@@ -1084,10 +1107,11 @@ const saveBillPreferences = async (event) => {
     } catch (error) {
       // 兼容旧数据或已失效文档，更新失败时重建偏好记录，不阻断记账。
       console.warn("更新记账偏好失败，改为重建", error);
-      await db.collection("bill_preferences").add({ data: { ...data, createdAt: new Date() } });
+      await db.collection("bill_preferences").doc(getStableDocumentId("bill-preference", event.familyId, openid)).set({ data: { ...data, createdAt: new Date() } });
     }
   } else {
-    await db.collection("bill_preferences").add({ data: { ...data, createdAt: new Date() } });
+    // 确定性文档 ID 使并发保存收敛到同一文档，避免查后插竞态产生重复记录
+    await db.collection("bill_preferences").doc(getStableDocumentId("bill-preference", event.familyId, openid)).set({ data: { ...data, createdAt: new Date() } });
   }
   return { success: true };
 };
@@ -1284,8 +1308,8 @@ const listBills = async (event) => {
     if (type && !["expense", "income"].includes(type)) throw new Error("账单类型无效");
     if (type) where.type = type;
   }
-  if (merchant) where.merchant = db.RegExp({ regexp: merchant, options: "i" });
-  if (remark) where.remark = db.RegExp({ regexp: remark, options: "i" });
+  if (merchant) where.merchant = db.RegExp({ regexp: escapeRegExp(merchant), options: "i" });
+  if (remark) where.remark = db.RegExp({ regexp: escapeRegExp(remark), options: "i" });
   const minimum = parseOptionalAmountCents(minAmount, "最低金额");
   const maximum = parseOptionalAmountCents(maxAmount, "最高金额");
   if (minimum !== null && maximum !== null && minimum > maximum) throw new Error("金额范围无效");
@@ -1568,7 +1592,7 @@ exports.main = async (event) => {
     return await main(event);
   } catch (error) {
     console.error(error);
-    const result = fail(error.message || "服务器错误", "SERVER_ERROR");
+    const result = fail(toClientErrorMessage(error), "SERVER_ERROR");
     if (error && error.batchId) {
       result.batchId = error.batchId;
       result.imported = Number(error.imported) || 0;
@@ -1590,6 +1614,9 @@ if (typeof module !== "undefined") {
     compareMembership,
     getStableDocumentId,
     getStableMembershipId,
-    resolveImportedMember
+    resolveImportedMember,
+    escapeRegExp,
+    toClientErrorMessage,
+    sanitizePreferenceValue
   };
 }

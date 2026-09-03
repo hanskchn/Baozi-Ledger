@@ -403,6 +403,8 @@ Page({
         if (!confirmation.confirm) return;
         wx.showLoading({ title: "解散中", mask: true });
         try {
+          // 先在服务端登记注销意图，随后的 forceLastFamily 解散豁免才会生效
+          await this.callLedger("beginAccountCancellation");
           await status.adminFamilies.reduce((promise, family) => promise.then(() => this.callLedger("dissolveFamily", { familyId: family.id, forceLastFamily: true })), Promise.resolve());
         } finally {
           wx.hideLoading();

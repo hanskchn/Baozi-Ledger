@@ -21,6 +21,19 @@ const DAILY_SUBMIT_LIMIT = 10;
 const ok = (data = {}) => ({ success: true, ...data });
 const fail = (message, errorCode = "BAD_REQUEST") => ({ success: false, errorCode, message });
 
+// 仅放行业务错误信息给客户端：带中文且不含底层驱动/网络报错特征，其余收敛为通用文案
+const INTERNAL_ERROR_MARKERS = [":fail", "openapi", "document.", "collection", "database", "getaddrinfo", "econn", "etimedout", "socket", "ssl", "network", "timeout", "internalerror", "failedoperation", "accessdenied", "permission", "mongo"];
+const toClientErrorMessage = (error) => {
+  const message = String((error && error.message) || "");
+  if (!message) return "服务器错误";
+  if (error && error.expose) return message;
+  const lower = message.toLowerCase();
+  if (INTERNAL_ERROR_MARKERS.some((marker) => lower.includes(marker)) || !/[\u4e00-\u9fa5]/.test(message)) {
+    return "服务器开小差了，请稍后重试";
+  }
+  return message;
+};
+
 const getOpenid = () => cloud.getWXContext().OPENID;
 
 const isDeveloper = (openid) => DEVELOPER_OPENIDS.includes(openid);
@@ -340,6 +353,6 @@ exports.main = async (event = {}) => {
     return { ...result, buildVersion: BUILD_VERSION };
   } catch (error) {
     console.error("feedbackFunctions error:", error && error.message, error);
-    return { ...fail(error.message || "服务器错误", "SERVER_ERROR"), buildVersion: BUILD_VERSION };
+    return { ...fail(toClientErrorMessage(error), "SERVER_ERROR"), buildVersion: BUILD_VERSION };
   }
 };
