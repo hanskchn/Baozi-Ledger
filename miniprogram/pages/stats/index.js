@@ -196,10 +196,10 @@ Page({
     const shown = top.concat(middle);
     const kept = shown.slice(0, MAX_SLICES - 1);
     const overflow = shown.slice(MAX_SLICES - 1).concat(tail);
-    const result = kept.map((item) => ({ name: item.name, value: Number(item.amount), icon: item.icon || '' }));
+    const result = kept.map((item) => ({ name: item.name, value: Number(item.amount), icon: item.icon || '', names: [item.name] }));
     if (overflow.length > 0) {
       const overflowValue = overflow.reduce((s, x) => s + Number(x.amount || 0), 0);
-      if (overflowValue > 0) result.push({ name: "其他", value: overflowValue });
+      if (overflowValue > 0) result.push({ name: "其他", value: overflowValue, names: overflow.map((x) => x.name) });
     }
     return result;
   },
@@ -449,9 +449,11 @@ Page({
     if (chartMode === this.data.chartMode) return;
     this.setData({ chartMode });
   },
-  _navigateToCategory(name) {
+  _navigateToCategory(name, rawNames) {
     if (!name) return;
+    const categoryNames = Array.isArray(rawNames) && rawNames.length ? rawNames.map((n) => String(n)).filter(Boolean) : [name];
     const filter = {
+      filterCategoryNames: categoryNames,
       filterCategory: name,
       filterType: this.data.chartType,
       filterAccount: this.data.filterAccount || "",
@@ -477,7 +479,9 @@ Page({
     this._navigateToCategory(event.currentTarget.dataset.name);
   },
   onPieTap(event) {
-    this._navigateToCategory(event.detail && event.detail.name);
+    const detail = event.detail || {};
+    // 合并扇区（「其他」）带 names 清单，保证点开账本能按真实分类明细下钻
+    this._navigateToCategory(detail.name, detail.names || [detail.name]);
   },
 
 });

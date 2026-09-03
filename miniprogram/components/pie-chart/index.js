@@ -56,7 +56,7 @@ Component({
       if (rel >= Math.PI * 2) rel = 0;
       for (const s of slices) {
         if (rel >= s.startAngle && rel < s.endAngle) {
-          this.triggerEvent('tap', { name: s.name });
+          this.triggerEvent('tap', { name: s.name, names: s.names || [s.name] });
           return;
         }
       }

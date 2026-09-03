@@ -10,6 +10,8 @@ Page({
     bills: [],
     filterMonth: "",
     selectedCategoryIds: [],
+    legacyCategoryNames: [],
+    legacyCategoryType: "",
     selectedAccountIds: [],
     selectedMemberIds: [],
     selectedTypes: [],
@@ -80,7 +82,8 @@ Page({
       if (pendingFilter) app.globalData.pendingBillsFilter = null;
       if (this.data.loadedFamilyId && this.data.loadedFamilyId !== familyId) {
         this.setData({
-          selectedCategoryIds: [], selectedAccountIds: [], selectedMemberIds: [], selectedTypes: [],
+          selectedCategoryIds: [], legacyCategoryNames: [], legacyCategoryType: "",
+          selectedAccountIds: [], selectedMemberIds: [], selectedTypes: [],
           filterDateStart: "", filterDateEnd: "",
           filterMinAmount: "", filterMaxAmount: "",
           merchant: "", remark: "", sort: "dateDesc",
@@ -123,7 +126,8 @@ Page({
     } catch (error) { /* ignore */ }
     this.setData({
       bills: [],
-      selectedCategoryIds: [], selectedAccountIds: [], selectedMemberIds: [], selectedTypes: [],
+      selectedCategoryIds: [], legacyCategoryNames: [], legacyCategoryType: "",
+      selectedAccountIds: [], selectedMemberIds: [], selectedTypes: [],
       filterDateStart: "", filterDateEnd: "",
       filterMinAmount: "", filterMaxAmount: "", merchant: "", remark: "",
       sort: "dateDesc", offset: 0, hasMore: true, loadingMore: false,
@@ -301,26 +305,52 @@ Page({
   },
 
   _resolveLegacyCategoryIds(result) {
-    if (!result.filterCategory) return [];
+    // 统计页下钻可能传 names 数组（饼图「其他」合并扇区会带真实分类名清单）；
+    // 二级名精确匹配优先，一级名整组兜底；仍匹配不到的（导入遗留名/已删改名等）原样返回，
+    // 由 _buildCloudFilters 直传云端按 category1/category2 原文匹配，避免只剩类型筛选。
+    const rawNames = Array.isArray(result.filterCategoryNames) && result.filterCategoryNames.length
+      ? result.filterCategoryNames
+      : (result.filterCategory ? [result.filterCategory] : []);
+    const names = rawNames.map((name) => String(name || "").trim()).filter(Boolean);
+    if (names.length === 0) return { ids: [], names: [] };
+    const type = result.filterCategoryType || result.filterType;
+    const category1Mode = result.filterCategoryLevel === "category1";
+    const parents = (this.data.categories || []).filter((parent) => !type || parent.type === type);
     const ids = [];
-    (this.data.categories || []).forEach((parent) => {
-      const type = result.filterCategoryType || result.filterType;
-      if (type && parent.type !== type) return;
-      if (result.filterCategoryLevel === "category1" && parent.name === result.filterCategory) {
-        (parent.children || []).forEach((child) => ids.push(child.id));
-      }
-      (parent.children || []).forEach((child) => {
-        if (result.filterCategoryLevel !== "category1" && child.name === result.filterCategory) ids.push(child.id);
+    const resolved = new Set();
+    names.forEach((name) => {
+      let matched = [];
+      parents.forEach((parent) => {
+        (parent.children || []).forEach((child) => {
+          if (!category1Mode && child.name === name) matched.push(child.id);
+        });
       });
+      if (matched.length === 0) {
+        parents.forEach((parent) => {
+          if (parent.name === name) (parent.children || []).forEach((child) => matched.push(child.id));
+        });
+      }
+      if (matched.length > 0) {
+        matched.forEach((id) => ids.push(id));
+        resolved.add(name);
+      }
     });
-    return Array.from(new Set(ids));
+    return { ids: Array.from(new Set(ids)), names: names.filter((name) => !resolved.has(name)) };
   },
 
   _normalizeFilterResult(result) {
     const hasDateRange = !!result.filterDateStart || !!result.filterDateEnd;
-    const selectedCategoryIds = Array.isArray(result.selectedCategoryIds)
-      ? result.selectedCategoryIds
-      : this._resolveLegacyCategoryIds(result);
+    let selectedCategoryIds = [];
+    let legacyCategoryNames = [];
+    let legacyCategoryType = "";
+    if (Array.isArray(result.selectedCategoryIds)) {
+      selectedCategoryIds = result.selectedCategoryIds;
+    } else {
+      const resolved = this._resolveLegacyCategoryIds(result);
+      selectedCategoryIds = resolved.ids;
+      legacyCategoryNames = resolved.names;
+      legacyCategoryType = result.filterCategoryType || result.filterType || "";
+    }
     const selectedAccountIds = Array.isArray(result.selectedAccountIds)
       ? result.selectedAccountIds
       : (result.filterAccount ? (this.data.accounts || []).filter((account) => account.name === result.filterAccount).map((account) => account._id) : []);
@@ -335,6 +365,8 @@ Page({
       filterDateStart: result.filterDateStart || "",
       filterDateEnd: result.filterDateEnd || "",
       selectedCategoryIds,
+      legacyCategoryNames,
+      legacyCategoryType,
       selectedAccountIds,
       selectedMemberIds,
       selectedTypes,
@@ -362,8 +394,15 @@ Page({
       });
     });
     const selectedCategoryIds = this.data.selectedCategoryIds || [];
-    if (selectedCategoryIds.length > 0 && selectedCategoryIds.length < allCategoryIds.length) {
-      filters.categories = selectedCategoryIds.map((id) => categoryMap[id]).filter(Boolean);
+    const legacyCategoryNames = this.data.legacyCategoryNames || [];
+    if ((selectedCategoryIds.length > 0 && selectedCategoryIds.length < allCategoryIds.length) || legacyCategoryNames.length > 0) {
+      const categoryFilters = selectedCategoryIds.map((id) => categoryMap[id]).filter(Boolean);
+      legacyCategoryNames.forEach((name) => {
+        if (!categoryFilters.some((item) => item.name === name)) {
+          categoryFilters.push({ name, type: this.data.legacyCategoryType || undefined });
+        }
+      });
+      filters.categories = categoryFilters;
     }
 
     const accounts = this.data.accounts || [];
@@ -391,7 +430,8 @@ Page({
     this.setData({
       filterMonth: thisMonth,
       filterDateStart: "", filterDateEnd: "",
-      selectedCategoryIds: [], selectedAccountIds: [], selectedMemberIds: [], selectedTypes: [],
+      selectedCategoryIds: [], legacyCategoryNames: [], legacyCategoryType: "",
+      selectedAccountIds: [], selectedMemberIds: [], selectedTypes: [],
       merchant: "", filterMinAmount: "", filterMaxAmount: "", remark: "",
       offset: 0
     });
@@ -402,7 +442,7 @@ Page({
   removeFilterTag(e) {
     const key = e.currentTarget.dataset.key;
     const patch = { offset: 0 };
-    if (key === "category") patch.selectedCategoryIds = [];
+    if (key === "category") { patch.selectedCategoryIds = []; patch.legacyCategoryNames = []; patch.legacyCategoryType = ""; }
     else if (key === "member") patch.selectedMemberIds = [];
     else if (key === "account") patch.selectedAccountIds = [];
     else if (key === "type") patch.selectedTypes = [];
@@ -500,8 +540,11 @@ Page({
   _updateActiveFilterTags() {
     const tags = [];
     const categoryCount = (this.data.selectedCategoryIds || []).length;
+    const legacyCategoryNames = this.data.legacyCategoryNames || [];
     const allCategoryCount = (this.data.categories || []).reduce((sum, parent) => sum + ((parent.children || []).length), 0);
-    if (categoryCount > 0 && categoryCount < allCategoryCount) tags.push({ key: "category", label: categoryCount + "个分类" });
+    if ((categoryCount > 0 && categoryCount < allCategoryCount) || legacyCategoryNames.length > 0) {
+      tags.push({ key: "category", label: (categoryCount > 0 ? categoryCount : legacyCategoryNames.length) + "个分类" });
+    }
 
     const selectedMemberIds = this.data.selectedMemberIds || [];
     if (selectedMemberIds.length > 0 && selectedMemberIds.length < (this.data.members || []).length) {
