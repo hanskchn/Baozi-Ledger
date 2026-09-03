@@ -40,8 +40,10 @@ Page({
     this.setData({ importing: true });
     // 方案 A：客户端按 200 条/批拆分连续调用，服务端同批共享 batchId，任一批失败可整批回滚
     const BATCH_SIZE = 200;
-    const total = Number(this.data.total) || 0;
-    const batchCount = total > 0 ? Math.ceil(total / BATCH_SIZE) : 1;
+    // 进度分母按“有效条数”显示（用户期望 200/1900）；分批仍按文件总行数推进（含无效行）
+    const totalRaw = Number(this.data.total) || 0;
+    const total = Number(this.data.validCount) || totalRaw;
+    const batchCount = totalRaw > 0 ? Math.ceil(totalRaw / BATCH_SIZE) : 1;
     let batchId = "";
     let imported = 0;
     let importedExpense = 0;
