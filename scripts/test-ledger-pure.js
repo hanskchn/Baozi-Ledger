@@ -80,11 +80,14 @@ test("sanitizeAvatarUrl 仅允许 cloud/https 且限长", () => {
   assert.equal(T.sanitizeAvatarUrl("a".repeat(513)), "");
 });
 
-test("invite 限流：每分钟 12 次内放行，第 13 次拒绝", () => {
+test("invite 限流：每分钟 12 次内放行，第 13 次拒绝", async () => {
+  const { FakeDB } = require("./fake-db");
+  const rateDb = new FakeDB();
+  await rateDb.createCollection("rate_limits");
   for (let i = 0; i < 12; i += 1) {
-    assert.doesNotThrow(() => T.assertInviteRateLimit());
+    await T.assertInviteRateLimit({ dbOverride: rateDb });
   }
-  assert.throws(() => T.assertInviteRateLimit(), /操作过于频繁/);
+  await assert.rejects(() => T.assertInviteRateLimit({ dbOverride: rateDb }), /操作过于频繁/);
 });
 
 test("isTimerTrigger 防伪造：无身份定时任务放行、用户请求拒绝", () => {

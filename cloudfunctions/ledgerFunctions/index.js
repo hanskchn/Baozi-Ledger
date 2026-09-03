@@ -168,20 +168,50 @@ const toClientErrorMessage = (error) => {
   return message;
 };
 
-// 邀请码校验/加入的轻量限流（单实例内存，最佳努力）：同一 openid 每分钟最多 12 次
+// 邀请码校验/加入的全局限流：按“openid + 分钟桶”写入数据库计数，跨云函数实例一致；
+// 同一 openid 每分钟最多 12 次，计数写入失败时降级放行，不阻塞邀请主流程。
 const INVITE_RATE_LIMIT = 12;
 const INVITE_RATE_WINDOW_MS = 60 * 1000;
-const inviteRateMap = new Map();
-const assertInviteRateLimit = () => {
-  const key = getOpenid() || "anonymous";
-  const now = Date.now();
-  const entry = inviteRateMap.get(key);
-  if (!entry || now > entry.resetAt) {
-    inviteRateMap.set(key, { count: 1, resetAt: now + INVITE_RATE_WINDOW_MS });
+const RATE_LIMIT_COLLECTION = "rate_limits";
+const ensureRateLimitCollection = () => {
+  try {
+    db.createCollection(RATE_LIMIT_COLLECTION).catch(() => {});
+  } catch (error) {
+    // 环境不支持或集合已存在时忽略，后续写入会自然建集
+  }
+};
+ensureRateLimitCollection();
+
+const assertInviteRateLimit = async (options = {}) => {
+  const client = options.dbOverride || db;
+  const openid = getOpenid() || "unknown";
+  const bucket = Math.floor(Date.now() / INVITE_RATE_WINDOW_MS);
+  const docId = getStableDocumentId("invite-rate", openid, String(bucket));
+  const ref = client.collection(RATE_LIMIT_COLLECTION).doc(docId);
+  let current = 0;
+  try {
+    let snapshot = null;
+    try {
+      snapshot = await ref.get();
+    } catch (error) {
+      // 窗口内尚无记录或并发缺失：按无记录处理
+    }
+    if (snapshot && snapshot.data) {
+      current = Number(snapshot.data.count) || 0;
+      await ref.update({ data: { count: client.command.inc(1) } });
+    } else {
+      await ref.set({ data: { openid, bucket, count: 1, createdAt: new Date() } });
+      // 新建窗口时顺手清理更早的历史遗留记录（尽力而为，失败忽略）
+      client.collection(RATE_LIMIT_COLLECTION)
+        .where({ openid, createdAt: client.command.lt(new Date(Date.now() - 6 * INVITE_RATE_WINDOW_MS)) })
+        .remove()
+        .catch(() => {});
+    }
+  } catch (error) {
+    console.warn("邀请限流写入失败，降级放行", error);
     return;
   }
-  entry.count += 1;
-  if (entry.count > INVITE_RATE_LIMIT) throw new Error("操作过于频繁，请稍后再试");
+  if (current + 1 > INVITE_RATE_LIMIT) throw new Error("操作过于频繁，请稍后再试");
 };
 
 // 计算默认账本名称：已有同名账本时依次使用“我的家庭账本 2、3…”
@@ -817,7 +847,7 @@ const getValidInvite = async (code) => {
 };
 
 const verifyInvite = async (event) => {
-  assertInviteRateLimit();
+  await assertInviteRateLimit();
   const code = String(event.code || "").trim().toUpperCase();
   if (!code) throw new Error("请输入邀请码");
   const invite = await getValidInvite(code);
@@ -842,7 +872,7 @@ const verifyInvite = async (event) => {
 };
 
 const confirmJoinFamily = async (event) => {
-  assertInviteRateLimit();
+  await assertInviteRateLimit();
   const code = String(event.code || "").trim().toUpperCase();
   if (!code) throw new Error("请输入邀请码");
   const invite = await getValidInvite(code);

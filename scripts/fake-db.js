@@ -17,11 +17,24 @@ function makeCommand() {
   const lt = (v) => makeCond("lt", v);
   const inOp = (v) => makeCond("in", v);
   const andOp = (...args) => makeAndCond(args);
+  const inc = (v) => ({ __op: "inc", v });
   // 聚合表达式操作符：sum("$amount") / substr(["$date", 0, 10])
   const sum = (field) => ({ __op: "sum", field });
   const substr = (args) => ({ __op: "substr", args });
   const aggregate = { sum, substr };
-  return { gte, lte, gt, lt, in: inOp, and: andOp, aggregate };
+  return { gte, lte, gt, lt, in: inOp, and: andOp, inc, aggregate };
+}
+
+// 应用更新数据，支持 { count: command.inc(1) } 这类自增操作
+function applyUpdates(doc, data) {
+  for (const key of Object.keys(data)) {
+    const value = data[key];
+    if (value && typeof value === "object" && value.__op === "inc") {
+      doc[key] = (Number(doc[key]) || 0) + value.v;
+    } else {
+      doc[key] = value;
+    }
+  }
 }
 
 function matchValue(docValue, cond) {
@@ -157,11 +170,20 @@ class FakeDB {
         let n = 0;
         for (const doc of self._rows(name)) {
           if (Object.entries(this._query).every(([k, v]) => matchValue(doc[k], v))) {
-            Object.assign(doc, data);
+            applyUpdates(doc, data);
             n += 1;
           }
         }
         return { stats: { updated: n } };
+      },
+      async remove() {
+        // where().remove() 批量删除
+        const targets = self._rows(name).filter((doc) => this._matchesQuery(doc));
+        for (const doc of targets) {
+          const idx = self._rows(name).indexOf(doc);
+          if (idx >= 0) self._rows(name).splice(idx, 1);
+        }
+        return { removed: targets.length };
       },
       doc(id) { return self._doc(name, id); },
       // 聚合管道：match().group().end() 返回 { list }
@@ -197,7 +219,7 @@ class FakeDB {
       async update({ data }) {
         const doc = self._rows(name).find((d) => d._id === id);
         if (!doc) { const err = new Error("document.update:fail document not exists"); err.code = -1; throw err; }
-        Object.assign(doc, data);
+        applyUpdates(doc, data);
         return { stats: { updated: 1 } };
       },
       async remove() {

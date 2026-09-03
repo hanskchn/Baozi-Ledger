@@ -34,7 +34,8 @@ const ALL_COLLECTIONS = [
   "operation_logs",
   "initialization_locks",
   "feedbacks",
-  "reminder_subscriptions"
+  "reminder_subscriptions",
+  "rate_limits"
 ];
 
 const CLEAR_PARALLEL = 5;

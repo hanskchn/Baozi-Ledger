@@ -225,6 +225,8 @@
 | 2026-09-03 | accountingFunctions（38.3 KB） | 目标 1 安全加固 | 同上 | ✅ 部署成功（IDE CLI） | 正则转义/错误收敛/偏好校验/预算竞态；测试见 §验证清单 |
 | 2026-09-03 | feedbackFunctions（4.5 KB） | 目标 1 安全加固 | 同上 | ✅ 部署成功（IDE CLI） | 错误信息收敛 |
 | 2026-09-03 | resetTestData（2.3 KB） | 目标 1 安全加固 | 同上 | ✅ 部署成功（IDE CLI） | 清除需显式 `confirm:true`；测试工具页验证 |
+| 2026-09-03（补丁） | ledgerFunctions（38.4 KB） | 邀请限流升级为数据库全局计数，修复多实例绕过 | `npm test` 91 项零回归 + `verify` 13 步存量 3 告警 | ✅ 部署成功（IDE CLI） | `rate_limits` 集合新引入；13 次连续调用第 13 次应拒绝 |
+| 2026-09-03（补丁） | resetTestData（2.3 KB） | `ALL_COLLECTIONS` 纳入 `rate_limits` | 同上 | ✅ 部署成功（IDE CLI） | 测试环境清除数据时联动清理限流计数 |
 
 ---
 
