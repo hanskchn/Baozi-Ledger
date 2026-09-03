@@ -1082,11 +1082,23 @@ const getBillPreferences = async (event) => {
   return { success: true, preferences: toClientBillPreferences(result.data[0]) };
 };
 
-// 偏好值仅允许 ≤20 字的文本或空，拒绝任意结构化数据入库
-const sanitizePreferenceValue = (value) => {
-  if (value === undefined || value === null || value === "") return null;
+// 偏好字段仅接受白名单形状：分类记忆为 { category1, category2 } 短文本对象，账户为短文本
+const toShortText = (value) => {
+  if (value === undefined || value === null) return "";
   if (typeof value !== "string") throw new Error("记账偏好格式不正确");
-  return value.trim().slice(0, 20) || null;
+  return value.trim().slice(0, 20);
+};
+const sanitizeCategoryPreference = (value) => {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value !== "object" || Array.isArray(value)) throw new Error("记账偏好格式不正确");
+  const category1 = toShortText(value.category1);
+  const category2 = toShortText(value.category2);
+  if (!category1 && !category2) return null;
+  return { category1, category2 };
+};
+const sanitizeAccountPreference = (value) => {
+  const text = toShortText(value);
+  return text || null;
 };
 
 const saveBillPreferences = async (event) => {
@@ -1096,9 +1108,9 @@ const saveBillPreferences = async (event) => {
   const data = {
     familyId: event.familyId,
     openid,
-    expenseCategory: sanitizePreferenceValue(event.expenseCategory),
-    incomeCategory: sanitizePreferenceValue(event.incomeCategory),
-    account: sanitizePreferenceValue(event.account) || "现金",
+    expenseCategory: sanitizeCategoryPreference(event.expenseCategory),
+    incomeCategory: sanitizeCategoryPreference(event.incomeCategory),
+    account: sanitizeAccountPreference(event.account) || "现金",
     updatedAt: new Date()
   };
   if (existing.data[0]) {
@@ -1617,6 +1629,7 @@ if (typeof module !== "undefined") {
     resolveImportedMember,
     escapeRegExp,
     toClientErrorMessage,
-    sanitizePreferenceValue
+    sanitizeCategoryPreference,
+    sanitizeAccountPreference
   };
 }

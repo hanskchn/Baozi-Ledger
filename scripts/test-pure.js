@@ -154,14 +154,26 @@ test("toClientErrorMessage 收敛底层/英文错误", () => {
   assert.equal(T.toClientErrorMessage(exposed), "第三方接口限流");
 });
 
-test("sanitizePreferenceValue 仅接受短文本", () => {
-  assert.equal(T.sanitizePreferenceValue("  餐饮  "), "餐饮");
-  assert.equal(T.sanitizePreferenceValue(""), null);
-  assert.equal(T.sanitizePreferenceValue(null), null);
-  assert.equal(T.sanitizePreferenceValue(undefined), null);
-  const long = T.sanitizePreferenceValue("一二三四五六七八九十壹贰叁肆伍陆柒捌玖拾");
+test("sanitizeCategoryPreference 仅接受 category1/category2 短文本对象", () => {
+  assert.deepEqual(T.sanitizeCategoryPreference({ category1: " 餐饮 ", category2: "午餐" }), { category1: "餐饮", category2: "午餐" });
+  assert.equal(T.sanitizeCategoryPreference(null), null);
+  assert.equal(T.sanitizeCategoryPreference(undefined), null);
+  assert.equal(T.sanitizeCategoryPreference(""), null);
+  assert.equal(T.sanitizeCategoryPreference({}), null);
+  const long = T.sanitizeCategoryPreference({ category1: "一个".repeat(20), category2: "两个".repeat(12) });
+  assert.ok(long.category1.length <= 20 && long.category2.length <= 20);
+  assert.throws(() => T.sanitizeCategoryPreference("餐饮"));
+  assert.throws(() => T.sanitizeCategoryPreference(["餐饮"]));
+  assert.throws(() => T.sanitizeCategoryPreference({ category1: 123 }));
+});
+
+test("sanitizeAccountPreference 仅接受短文本账户", () => {
+  assert.equal(T.sanitizeAccountPreference("  现金  "), "现金");
+  assert.equal(T.sanitizeAccountPreference(null), null);
+  assert.equal(T.sanitizeAccountPreference(undefined), null);
+  assert.equal(T.sanitizeAccountPreference(""), null);
+  const long = T.sanitizeAccountPreference("支付宝零钱通储蓄卡活期");
   assert.ok(long.length <= 20);
-  assert.throws(() => T.sanitizePreferenceValue(123));
-  assert.throws(() => T.sanitizePreferenceValue({ name: "x" }));
-  assert.throws(() => T.sanitizePreferenceValue(["餐饮"]));
+  assert.throws(() => T.sanitizeAccountPreference(123));
+  assert.throws(() => T.sanitizeAccountPreference({ name: "现金" }));
 });
