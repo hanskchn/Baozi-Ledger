@@ -206,6 +206,8 @@ Page({
       cached.preferences = preferences;
       cached.ts = Date.now();
       wx.setStorageSync(key, cached);
+      // 同步页面内存，避免“再记一笔/切换类型”后保存时用旧的偏好覆盖另一态
+      this.setData({ preferences });
     } catch (e) {}
   },
 
@@ -440,10 +442,16 @@ Page({
 
   async savePreferences() {
     const preferenceKey = this.data.type === "expense" ? "expenseCategory" : "incomeCategory";
+    // 以本地最新缓存为准（每次保存后都会更新），避免用页面初始化时的旧值覆盖另一态
+    let latest = this.data.preferences || null;
+    try {
+      const cached = wx.getStorageSync("formOptions:" + this.data.familyId);
+      if (cached && cached.preferences) latest = cached.preferences;
+    } catch (e) {}
     const data = {
       familyId: this.data.familyId,
-      expenseCategory: this.data.preferences ? this.data.preferences.expenseCategory : null,
-      incomeCategory: this.data.preferences ? this.data.preferences.incomeCategory : null,
+      expenseCategory: latest ? latest.expenseCategory : null,
+      incomeCategory: latest ? latest.incomeCategory : null,
       account: this.data.account
     };
     data[preferenceKey] = { category1: this.data.category1, category2: this.data.category2 };
