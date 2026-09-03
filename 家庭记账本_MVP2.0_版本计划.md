@@ -221,7 +221,10 @@
 
 | 日期 | 云函数 | 部署原因 | 部署前门禁 | 部署结果 | 备注 |
 |---|---|---|---|---|---|
-| （待部署） | ledgerFunctions / accountingFunctions / feedbackFunctions / resetTestData | 目标 1 安全加固 | `npm test` 91 项（存量 7 零回归）+ `npm run verify` 13 步（存量 3 项记录在案） | ⏳ 待用户打开微信开发者工具并登录后执行 | 部署前快照 `reminder_subscriptions`；部署后回归 9/13/21 定时提醒与续订逻辑 |
+| 2026-09-03 | ledgerFunctions（38.0 KB） | 目标 1 安全加固 | `npm test` 91 项（存量 7 零回归）+ `npm run verify` 13 步（存量 3 项记录在案） | ✅ 部署成功（IDE CLI） | 定时器伪造/邀请限流/注销意图等；待回归 9/13/21 定时提醒 |
+| 2026-09-03 | accountingFunctions（38.3 KB） | 目标 1 安全加固 | 同上 | ✅ 部署成功（IDE CLI） | 正则转义/错误收敛/偏好校验/预算竞态；测试见 §验证清单 |
+| 2026-09-03 | feedbackFunctions（4.5 KB） | 目标 1 安全加固 | 同上 | ✅ 部署成功（IDE CLI） | 错误信息收敛 |
+| 2026-09-03 | resetTestData（2.3 KB） | 目标 1 安全加固 | 同上 | ✅ 部署成功（IDE CLI） | 清除需显式 `confirm:true`；测试工具页验证 |
 
 ---
 
