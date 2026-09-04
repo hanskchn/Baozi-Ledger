@@ -23,7 +23,7 @@ Page({
     typeText: TYPE_TEXT,
     statusText: STATUS_TEXT,
     maxImages: MAX_IMAGES,
-    form: { type: "bug", content: "", contact: "", images: [] },
+    form: { type: "bug", content: "", images: [] },
     submitting: false,
     unreadCount: 0,
     mineList: [],
@@ -96,10 +96,6 @@ Page({
 
   onContentInput(event) {
     this.setData({ "form.content": event.detail.value });
-  },
-
-  onContactInput(event) {
-    this.setData({ "form.contact": event.detail.value });
   },
 
   chooseImage() {
@@ -179,7 +175,6 @@ Page({
       await this.call("submitFeedback", {
         type: this.data.form.type,
         content,
-        contact: this.data.form.contact.trim(),
         images: imageFileIds,
         pagePath: this.getSourcePagePath(),
         ...envInfo
@@ -187,7 +182,7 @@ Page({
       wx.hideLoading();
       wx.showToast({ title: "提交成功，感谢反馈", icon: "success" });
       this.setData({
-        form: { type: "bug", content: "", contact: "", images: [] },
+        form: { type: "bug", content: "", images: [] },
         mineList: [],
         page: 1
       });

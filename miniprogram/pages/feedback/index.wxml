@@ -35,11 +35,6 @@
       </view>
     </view>
 
-    <view class="card">
-      <view class="field-label">联系方式（选填）</view>
-      <input class="contact-input" placeholder="微信号 / 手机号，方便我们回复你" placeholder-class="placeholder" maxlength="50" value="{{form.contact}}" bindinput="onContactInput" />
-    </view>
-
     <button class="submit-btn" bindtap="submit" loading="{{submitting}}" disabled="{{submitting}}">提交反馈</button>
     <view class="tips">系统会自动附加机型、微信版本和当前页面，帮助我们更快定位问题</view>
     <view class="dev-id" bindtap="copyIdentity" wx:if="{{identity}}">身份ID：{{identity}}（点击复制）</view>

@@ -79,7 +79,6 @@ const submitFeedback = async (event) => {
   const openid = getOpenid();
   const type = String(event.type || "").trim();
   const content = String(event.content || "").trim();
-  const contact = String(event.contact || "").trim().slice(0, 50);
   const pagePath = String(event.pagePath || "").trim().slice(0, 200);
   const appVersion = String(event.appVersion || "").trim().slice(0, 20);
   const envVersion = String(event.envVersion || "").trim().slice(0, 20);
@@ -111,7 +110,6 @@ const submitFeedback = async (event) => {
     openid,
     type,
     content,
-    contact,
     images,
     pagePath,
     systemInfo: sanitizeSystemInfo(event.systemInfo),
@@ -211,7 +209,6 @@ const getFeedbackDetail = async (event) => {
     id: data._id,
     type: data.type,
     content: data.content,
-    contact: data.contact || "",
     images: imageUrls,
     pagePath: data.pagePath || "",
     systemInfo: data.systemInfo || {},
@@ -276,7 +273,6 @@ const listAllFeedback = async (event) => {
       openid: item.openid,
       type: item.type,
       content: item.content,
-      contact: item.contact || "",
       imageCount: Array.isArray(item.images) ? item.images.length : 0,
       pagePath: item.pagePath || "",
       appVersion: item.appVersion || "",
@@ -330,7 +326,7 @@ const replyFeedback = async (event) => {
   return ok({ id });
 };
 
-const BUILD_VERSION = "2026-08-26-feedback-v4";
+const BUILD_VERSION = "2026-09-04-feedback-v5-remove-contact";
 
 const HANDLERS = {
   whoami,
